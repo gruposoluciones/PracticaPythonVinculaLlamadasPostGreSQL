@@ -132,25 +132,54 @@
 
     <!-- VINCULACIÓN -->
     <section id="vista-vinculacion" class="vista" aria-labelledby="titulo-vista">
-      <form id="form-vinculacion" class="tarjeta filtros">
-        <div class="campo">
-          <label for="v-a">Número A</label>
-          <input id="v-a" name="a" type="text" inputmode="tel" placeholder="51977369934" required>
+      <form id="form-vinculacion" class="tarjeta">
+        <div class="campo campo-completo">
+          <label for="v-entrada">Números a cruzar (2 a 10)</label>
+          <div class="entrada-grupo">
+            <input id="v-entrada" type="text" inputmode="tel"
+                   placeholder="Escribe un número y pulsa Añadir" autocomplete="off">
+            <button type="button" id="v-agregar" class="boton">Añadir</button>
+          </div>
         </div>
-        <div class="campo">
-          <label for="v-b">Número B</label>
-          <input id="v-b" name="b" type="text" inputmode="tel" placeholder="51946024620" required>
-        </div>
+        <div id="v-chips" class="chips" aria-live="polite"></div>
+        <p id="v-contador" class="nota">0 de 10 números seleccionados.</p>
         <div class="acciones-filtro">
-          <button type="submit" class="boton primario">Buscar vinculación</button>
+          <button type="submit" id="v-buscar" class="boton primario" disabled>Consultar</button>
+          <button type="button" id="v-limpiar" class="boton">Limpiar</button>
         </div>
       </form>
 
       <div id="v-kpis" class="rejilla-kpis oculto"></div>
 
+      <div class="rejilla-dos">
+        <div class="tarjeta">
+          <div class="tarjeta-cabecera"><h2>Participación por número</h2></div>
+          <div id="v-por-numero" class="lista-barras">
+            <p class="nota">Sin consulta.</p>
+          </div>
+        </div>
+        <div class="tarjeta">
+          <div class="tarjeta-cabecera"><h2>Pares con más contacto</h2></div>
+          <div id="v-pares" class="lista-barras">
+            <p class="nota">Sin consulta.</p>
+          </div>
+        </div>
+      </div>
+
       <div class="tarjeta">
         <div class="tarjeta-cabecera">
-          <h2>Comunicaciones entre ambas líneas</h2>
+          <h2>Matriz de contactos</h2>
+          <span class="etiqueta">comunicaciones por par</span>
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla matriz" id="v-matriz"></table>
+        </div>
+        <p class="nota">La diagonal se excluye; cada celda cuenta las comunicaciones entre ese par.</p>
+      </div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cabecera">
+          <h2>Comunicaciones entre las líneas seleccionadas</h2>
           <span id="v-resumen" class="etiqueta">Sin búsqueda</span>
         </div>
         <div class="tabla-contenedor">
@@ -172,7 +201,7 @@
           </table>
         </div>
         <div id="v-vacio" class="vacio oculto">
-          <p>No se encontraron comunicaciones entre estos números.</p>
+          <p>No se encontraron comunicaciones entre los números seleccionados.</p>
           <p id="v-aviso-origen" class="nota oculto"></p>
         </div>
         <div class="paginacion">

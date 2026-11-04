@@ -73,9 +73,26 @@ Abre **http://127.0.0.1:8000**.
 | Pestaña | Para qué sirve |
 |---|---|
 | **Consulta** | Filtrar por número, fechas, tipo y sentido; paginar y exportar |
-| **Vinculación** | Ver todas las comunicaciones entre dos líneas |
+| **Vinculación** | Cruzar de 2 a 10 números seleccionados y ver matriz, pares y comunicaciones |
 | **Estadísticas** | Totales, duración, top destinos y actividad diaria |
 | **Cargas** | Subir archivos y revisar el historial |
+
+### Consulta de 2 a 10 números
+
+En la pestaña **Vinculación**:
+
+1. Escribe un número y pulsa **Añadir** (o `Enter`).
+2. Repite hasta tener entre **2 y 10** números.
+3. Pulsa **Consultar**.
+
+La vista muestra:
+
+- las comunicaciones cuyos **dos extremos** están en la selección;
+- una **matriz de contactos** por cada par (simétrica, sin diagonal);
+- la **participación por número** y los **pares con más contacto**;
+- el listado paginado con fecha, hora, duración, tipo y sentido.
+
+Los números se pueden quitar uno a uno con la **×** del chip, o todos con **Limpiar**. El botón *Consultar* se habilita al llegar a 2 y se bloquea al superar 10.
 
 ## Formatos soportados
 
@@ -96,7 +113,8 @@ El lector detecta el layout por el número de columnas y la presencia de cabecer
 | Q | Entrante/Saliente |
 
 **16 columnas** (con o sin cabecera): el mismo layout **sin** `Número origen`.
-En ese caso las consultas de vinculación avisan de que no hay origen que cruzar.
+En ese caso se pueden cruzar las comunicaciones salientes (titular → destino), pero
+no las entrantes, porque falta el número llamante.
 
 También se acepta CSV separado por `;` o `,`.
 
@@ -118,7 +136,7 @@ etl_cargas 1 ──── * llamadas
 | GET | `/api/salud` | Estado del servidor y la base |
 | GET | `/api/resumen` | Totales globales |
 | GET | `/api/llamadas` | Listado paginado y filtrado |
-| GET | `/api/vinculaciones?a=&b=` | Comunicaciones entre dos líneas |
+| GET | `/api/vinculaciones?numeros=a,b,c` | Comunicaciones, matriz y pares entre 2 y 10 números (también acepta `a` y `b`) |
 | GET | `/api/estadisticas` | Agregados del conjunto filtrado |
 | GET | `/api/agregados?por=dia\|destino\|origen\|tipo\|sentido` | Agrupaciones |
 | GET | `/api/cargas` | Historial de cargas |
@@ -151,6 +169,43 @@ Parámetros comunes: `numero`, `desde`, `hasta`, `tipo`, `sentido`, `parcial`, `
 # o
 python -m pytest -q
 ```
+
+## Preguntas frecuentes (Q&A)
+
+**¿Cuántos números puedo consultar a la vez?**
+Entre 2 y 10. El botón *Consultar* se habilita al llegar a 2 y se bloquea por encima de 10.
+
+**¿Puedo cambiar la selección sin recargar la página?**
+Sí. Quita números con la **×**, añade otros y vuelve a consultar.
+
+**¿Qué significa la matriz de contactos?**
+Cada celda cuenta las comunicaciones entre ese par de números. Es simétrica, la diagonal se excluye y los pares sin contacto muestran `·`.
+
+**¿Qué pasa si un número no aparece en ningún par?**
+Aparece con 0 comunicaciones; no se inventan datos.
+
+**¿Por qué una consulta devuelve 0 si el número existe?**
+Puede que el archivo no tenga la columna `Número origen`. En ese caso solo se cruzan las comunicaciones salientes (titular → destino).
+
+**¿Cargar el mismo Excel dos veces duplica los registros?**
+No. Cada fila tiene un hash único y las repetidas se ignoran; la carga lo informa como *duplicadas*.
+
+**¿Los datos salen de mi PC?**
+No. La API y la web escuchan en `127.0.0.1` y la base de datos es local.
+
+## Verificación funcional (QA)
+
+| Caso | Resultado esperado | Estado |
+|---|---|---|
+| Cargar `entel_base.xlsx` (17 columnas) | 99 filas insertadas | ✅ |
+| Cargar CSV de 16 columnas | Detección automática y carga | ✅ |
+| Recargar el mismo archivo | 0 insertadas, N duplicadas | ✅ |
+| Consultar 2 números | Comunicaciones + 1 par | ✅ |
+| Consultar 3 números | 75 comunicaciones, 2 pares | ✅ |
+| Intentar 1 número | HTTP 400 | ✅ |
+| Intentar 11 números | HTTP 400 | ✅ |
+| Exportar CSV | Descarga con BOM y `;` | ✅ |
+| Tests automatizados | 93 passed | ✅ |
 
 ## Seguridad y datos
 

@@ -65,3 +65,49 @@ def test_vincular_valida_numeros_sin_base_de_datos():
         consultas.vincular("abc", "def")
     with pytest.raises(ValueError):
         consultas.vincular("51900000001", "51900000001")
+
+
+def test_normalizar_lista_numeros_acepta_texto_lista_y_tupla():
+    esperado = ["51900000001", "51900000002"]
+    assert consultas.normalizar_lista_numeros("51900000001, 51900000002") == esperado
+    assert (
+        consultas.normalizar_lista_numeros(
+            ["+51 900 000 001", "51900000002", "51900000002"]
+        )
+        == esperado
+    )
+    assert (
+        consultas.normalizar_lista_numeros(("51900000001", "51900000002"))
+        == esperado
+    )
+
+
+@pytest.mark.parametrize(
+    "entrada",
+    [
+        "",
+        "   ",
+        "51900000001",
+        "51900000001,51900000001",
+        "51900000001,abc",
+        "1234567,51900000002",
+        "51900000001,1234567890123456",
+    ],
+)
+def test_normalizar_lista_numeros_rechaza_selecciones_invalidas(entrada):
+    with pytest.raises(ValueError):
+        consultas.normalizar_lista_numeros(entrada)
+
+
+def test_normalizar_lista_numeros_limite_de_diez():
+    diez = [f"51900000{indice:03d}" for indice in range(10)]
+    assert len(consultas.normalizar_lista_numeros(diez)) == 10
+    with pytest.raises(ValueError):
+        consultas.normalizar_lista_numeros([*diez, "51900000999"])
+
+
+def test_vincular_varios_valida_antes_de_consultar_la_base():
+    with pytest.raises(ValueError):
+        consultas.vincular_varios([])
+    with pytest.raises(ValueError):
+        consultas.vincular_varios(["51900000001"])

@@ -107,13 +107,24 @@ def llamadas(
 
 @app.get("/api/vinculaciones")
 def vinculaciones(
-    a: str = Query(..., min_length=8, max_length=20),
-    b: str = Query(..., min_length=8, max_length=20),
+    numeros: str | None = Query(
+        None,
+        max_length=250,
+        description="De 2 a 10 números separados por coma.",
+    ),
+    a: str | None = Query(None, max_length=20),
+    b: str | None = Query(None, max_length=20),
     pagina: int = Query(1, ge=1),
     tamano: int = Query(50, ge=1, le=500),
 ) -> dict[str, Any]:
+    seleccion = numeros or ",".join(valor for valor in (a, b) if valor)
+    if not seleccion:
+        raise HTTPException(
+            status_code=400,
+            detail="Indica 'numeros' (2 a 10) o los parámetros 'a' y 'b'.",
+        )
     try:
-        return consultas.vincular(a, b, pagina, tamano)
+        return consultas.vincular_varios(seleccion, pagina, tamano)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

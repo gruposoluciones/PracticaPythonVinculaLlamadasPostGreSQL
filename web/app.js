@@ -13,7 +13,7 @@ const formatoDecimal = new Intl.NumberFormat("es-PE", { maximumFractionDigits: 2
 const estado = {
   vista: "consulta",
   consulta: { pagina: 1, paginas: 0, tamano: 50 },
-  vinculacion: { pagina: 1, paginas: 0, tamano: 50, a: "", b: "" },
+  vinculacion: { pagina: 1, paginas: 0, tamano: 50, numeros: [] },
   resumen: null,
 };
 
@@ -116,7 +116,7 @@ function parametros(valores) {
 
 const TITULOS = {
   consulta: ["Consulta", "Busca, filtra y compara comunicaciones."],
-  vinculacion: ["Vinculación", "Comunicaciones cruzadas entre dos líneas."],
+  vinculacion: ["Vinculación", "Cruza de 2 a 10 números y consulta sus contactos."],
   estadisticas: ["Estadísticas", "Volumen, duración y distribución de las comunicaciones."],
   cargas: ["Cargas", "Importa archivos y revisa el historial de procesos."],
 };
@@ -256,8 +256,10 @@ function exportarConsulta() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Vinculación                                                         */
+/* Vinculación múltiple (2 a 10 números)                               */
 /* ------------------------------------------------------------------ */
+
+const LIMITE_NUMEROS = 10;
 
 function pintarKpis(contenedor, tarjetas) {
   contenedor.textContent = "";
@@ -272,24 +274,141 @@ function pintarKpis(contenedor, tarjetas) {
   contenedor.classList.toggle("oculto", tarjetas.length === 0);
 }
 
-async function buscarVinculacion(pagina = 1) {
-  const a = $("#v-a").value.trim();
-  const b = $("#v-b").value.trim();
-  if (a.length < 8 || b.length < 8) {
-    aviso("Ingresa dos números de al menos 8 dígitos.", "error");
+function agregarNumero() {
+  const entrada = $("#v-entrada");
+  const numero = (entrada.value || "").replace(/\D/g, "");
+  if (!numero) {
+    aviso("Escribe un número antes de añadir.", "error");
     return;
   }
-  if (a === b) {
-    aviso("Los números A y B deben ser distintos.", "error");
+  if (numero.length < 8 || numero.length > 15) {
+    aviso("El número debe tener entre 8 y 15 dígitos.", "error");
+    return;
+  }
+  if (estado.vinculacion.numeros.includes(numero)) {
+    aviso("Ese número ya está en la selección.", "error");
+    return;
+  }
+  if (estado.vinculacion.numeros.length >= LIMITE_NUMEROS) {
+    aviso(`Puedes seleccionar como máximo ${LIMITE_NUMEROS} números.`, "error");
+    return;
+  }
+  estado.vinculacion.numeros.push(numero);
+  entrada.value = "";
+  pintarChips();
+  entrada.focus();
+}
+
+function quitarNumero(numero) {
+  estado.vinculacion.numeros = estado.vinculacion.numeros.filter(
+    (item) => item !== numero,
+  );
+  pintarChips();
+}
+
+function pintarChips() {
+  const contenedor = $("#v-chips");
+  contenedor.textContent = "";
+  estado.vinculacion.numeros.forEach((numero, indice) => {
+    const quitar = crear("button", {
+      clase: "chip-quitar",
+      texto: "×",
+      atributos: { type: "button", "aria-label": `Quitar ${numero}` },
+    });
+    quitar.addEventListener("click", () => quitarNumero(numero));
+    contenedor.append(
+      crear("span", { clase: "chip" }, [
+        crear("span", { texto: `${indice + 1}. ${numero}` }),
+        quitar,
+      ]),
+    );
+  });
+  const total = estado.vinculacion.numeros.length;
+  $("#v-contador").textContent =
+    `${total} de ${LIMITE_NUMEROS} números seleccionados.`;
+  $("#v-buscar").disabled = total < 2;
+}
+
+function pintarMatriz(numeros, pares) {
+  const tabla = $("#v-matriz");
+  tabla.textContent = "";
+  if (!numeros.length) return;
+
+  const indice = new Map(numeros.map((numero, posicion) => [numero, posicion]));
+  const matriz = numeros.map(() => numeros.map(() => 0));
+  pares.forEach((par) => {
+    const i = indice.get(par.a);
+    const j = indice.get(par.b);
+    if (i === undefined || j === undefined) return;
+    matriz[i][j] = Number(par.total) || 0;
+    matriz[j][i] = Number(par.total) || 0;
+  });
+
+  const thead = crear("thead");
+  const filaCabecera = crear("tr");
+  filaCabecera.append(crear("th", { texto: "—" }));
+  numeros.forEach((numero) => {
+    filaCabecera.append(
+      crear("th", { texto: numero, atributos: { title: numero } }),
+    );
+  });
+  thead.append(filaCabecera);
+
+  const tbody = crear("tbody");
+  numeros.forEach((numero, i) => {
+    const fila = crear("tr");
+    fila.append(crear("th", { texto: numero, atributos: { title: numero } }));
+    numeros.forEach((_, j) => {
+      if (i === j) {
+        fila.append(crear("td", { clase: "celda-diagonal", texto: "—" }));
+      } else {
+        fila.append(
+          crear("td", {
+            clase: matriz[i][j] ? "celda-con-datos" : "celda-sin-datos",
+            texto: matriz[i][j] ? formatoNumero.format(matriz[i][j]) : "·",
+          }),
+        );
+      }
+    });
+    tbody.append(fila);
+  });
+  tabla.append(thead, tbody);
+}
+
+function limpiarVinculacion() {
+  estado.vinculacion.numeros = [];
+  estado.vinculacion.pagina = 1;
+  estado.vinculacion.paginas = 0;
+  pintarChips();
+  $("#v-kpis").textContent = "";
+  $("#v-kpis").classList.add("oculto");
+  pintarMatriz([], []);
+  $("#v-tabla").textContent = "";
+  $("#v-vacio").classList.add("oculto");
+  $("#v-resumen").textContent = "Sin búsqueda";
+  ["#v-por-numero", "#v-pares"].forEach((selector) => {
+    const contenedor = $(selector);
+    contenedor.textContent = "";
+    contenedor.append(crear("p", { clase: "nota", texto: "Sin consulta." }));
+  });
+  actualizarPaginacion("v", 1, 0, 0, estado.vinculacion.tamano);
+}
+
+async function buscarVinculacion(pagina = 1) {
+  const numeros = estado.vinculacion.numeros;
+  if (numeros.length < 2) {
+    aviso("Selecciona al menos 2 números.", "error");
     return;
   }
 
-  estado.vinculacion.a = a;
-  estado.vinculacion.b = b;
-  const consulta = parametros({ a, b, pagina, tamano: estado.vinculacion.tamano });
-  const boton = $("#form-vinculacion button[type='submit']");
+  const consulta = parametros({
+    numeros: numeros.join(","),
+    pagina,
+    tamano: estado.vinculacion.tamano,
+  });
+  const boton = $("#v-buscar");
   boton.disabled = true;
-  boton.textContent = "Buscando…";
+  boton.textContent = "Consultando…";
   try {
     const datos = await api(`/api/vinculaciones?${consulta}`);
     const resumen = datos.resumen;
@@ -298,12 +417,25 @@ async function buscarVinculacion(pagina = 1) {
 
     pintarKpis($("#v-kpis"), [
       [formatoNumero.format(resumen.total), "comunicaciones"],
+      [formatoNumero.format(resumen.pares), "pares con contacto"],
       [formatearDuracion(resumen.duracion_total), "duración total"],
       [formatearDuracion(resumen.duracion_promedio), "duración promedio"],
       [formatoNumero.format(resumen.dias), "días con contacto"],
       [formatoNumero.format(resumen.entrantes), "entrantes"],
       [formatoNumero.format(resumen.salientes), "salientes"],
     ]);
+
+    pintarMatriz(datos.numeros, datos.pares);
+    pintarBarras(
+      $("#v-por-numero"),
+      datos.total ? datos.por_numero : [],
+      (fila) => fila.numero,
+    );
+    pintarBarras(
+      $("#v-pares"),
+      datos.pares,
+      (fila) => `${fila.a} ↔ ${fila.b}`,
+    );
 
     pintarFilas($("#v-tabla"), datos.filas, (datos.pagina - 1) * datos.tamano);
     $("#v-vacio").classList.toggle("oculto", datos.total > 0);
@@ -314,8 +446,8 @@ async function buscarVinculacion(pagina = 1) {
     const sinOrigen = Number(estado.resumen?.sin_origen || 0);
     if (datos.total === 0 && sinOrigen > 0) {
       avisoOrigen.textContent =
-        `Hay ${formatoNumero.format(sinOrigen)} registros sin número de origen ` +
-        "que no pueden cruzarse. Carga un archivo que incluya esa columna.";
+        `Hay ${formatoNumero.format(sinOrigen)} registros sin número de origen; ` +
+        "en esos archivos las comunicaciones entrantes no pueden cruzarse.";
       avisoOrigen.classList.remove("oculto");
     } else {
       avisoOrigen.classList.add("oculto");
@@ -323,8 +455,8 @@ async function buscarVinculacion(pagina = 1) {
   } catch (error) {
     aviso(error.message, "error");
   } finally {
-    boton.disabled = false;
-    boton.textContent = "Buscar vinculación";
+    boton.disabled = estado.vinculacion.numeros.length < 2;
+    boton.textContent = "Consultar";
   }
 }
 
@@ -517,6 +649,14 @@ function conectarEventos() {
     evento.preventDefault();
     buscarVinculacion(1);
   });
+  $("#v-agregar").addEventListener("click", agregarNumero);
+  $("#v-entrada").addEventListener("keydown", (evento) => {
+    if (evento.key === "Enter") {
+      evento.preventDefault();
+      agregarNumero();
+    }
+  });
+  $("#v-limpiar").addEventListener("click", limpiarVinculacion);
   $("#v-anterior").addEventListener("click", () => buscarVinculacion(estado.vinculacion.pagina - 1));
   $("#v-siguiente").addEventListener("click", () => buscarVinculacion(estado.vinculacion.pagina + 1));
 
@@ -533,6 +673,7 @@ function conectarEventos() {
 
 async function iniciar() {
   conectarEventos();
+  pintarChips();
   await verificarSalud();
   await cargarResumen();
   await buscarConsulta(1);

@@ -250,11 +250,146 @@ def agregados(
         return [dict(fila) for fila in cur.fetchall()]
 
 
-def _where_vinculacion() -> str:
-    return (
-        "((titular = %s AND (origen = %s OR destino = %s)) "
-        " OR (titular = %s AND (origen = %s OR destino = %s)))"
+MIN_NUMEROS_CRUCE = 2
+MAX_NUMEROS_CRUCE = 10
+
+
+def normalizar_lista_numeros(
+    valores: str | list[str] | tuple[str, ...],
+) -> list[str]:
+    """Normaliza y valida una selección de 2 a 10 números distintos."""
+    if isinstance(valores, str):
+        crudos = [parte for parte in valores.split(",") if parte.strip()]
+    else:
+        crudos = list(valores)
+
+    numeros: list[str] = []
+    for crudo in crudos:
+        digitos = _solo_digitos(crudo)
+        if not digitos:
+            raise ValueError("Todos los números deben contener dígitos.")
+        if not 8 <= len(digitos) <= 15:
+            raise ValueError("Cada número debe tener entre 8 y 15 dígitos.")
+        if digitos not in numeros:
+            numeros.append(digitos)
+
+    if len(numeros) < MIN_NUMEROS_CRUCE:
+        raise ValueError("Selecciona al menos 2 números distintos.")
+    if len(numeros) > MAX_NUMEROS_CRUCE:
+        raise ValueError(
+            f"Puedes consultar como máximo {MAX_NUMEROS_CRUCE} números."
+        )
+    return numeros
+
+
+def vincular_varios(
+    numeros: str | list[str] | tuple[str, ...],
+    pagina: int = 1,
+    tamano: int = 50,
+) -> dict[str, Any]:
+    """Comunicaciones entre 2 y 10 líneas seleccionadas.
+
+    Solo se consideran las comunicaciones cuyos dos extremos pertenecen a la
+    selección. El extremo contrario al titular se obtiene de ``origen`` y, si
+    coincide con el titular, de ``destino``.
+    """
+    lista = normalizar_lista_numeros(numeros)
+    marcadores = ", ".join(["%s"] * len(lista))
+    parametros = [*lista, *lista]
+    limite, desplazamiento = _limites(pagina, tamano)
+
+    base = f"""
+        WITH base AS (
+            SELECT id, titular, destino, origen, fecha, hora, duracion_seg,
+                   tipo, sentido, archivo_origen, fila_origen,
+                   COALESCE(NULLIF(origen, titular), NULLIF(destino, titular)) AS contraparte
+              FROM llamadas
+        ),
+        seleccion AS (
+            SELECT *
+              FROM base
+             WHERE titular IN ({marcadores})
+               AND contraparte IN ({marcadores})
+               AND contraparte IS NOT NULL
+               AND contraparte <> titular
+        )
+    """
+
+    with cursor(como_diccionario=True) as cur:
+        cur.execute(
+            base
+            + """
+            SELECT count(*)                                       AS total,
+                   count(*) FILTER (WHERE sentido = 'Entrante')   AS entrantes,
+                   count(*) FILTER (WHERE sentido = 'Saliente')   AS salientes,
+                   count(*) FILTER (WHERE tipo = 'Voz')           AS voz,
+                   count(*) FILTER (WHERE tipo = 'SMS')           AS sms,
+                   coalesce(sum(duracion_seg), 0)                 AS duracion_total,
+                   coalesce(round(avg(duracion_seg))::int, 0)     AS duracion_promedio,
+                   count(DISTINCT fecha)                          AS dias,
+                   min(fecha)                                     AS primera_fecha,
+                   max(fecha)                                     AS ultima_fecha
+              FROM seleccion
+            """,
+            parametros,
+        )
+        resumen = dict(cur.fetchone())
+
+        cur.execute(
+            base
+            + """
+            SELECT LEAST(titular, contraparte)     AS a,
+                   GREATEST(titular, contraparte)  AS b,
+                   count(*)                        AS total,
+                   coalesce(sum(duracion_seg), 0)  AS duracion
+              FROM seleccion
+             GROUP BY 1, 2
+             ORDER BY total DESC, a, b
+            """,
+            parametros,
+        )
+        pares = [dict(fila) for fila in cur.fetchall()]
+
+        cur.execute(
+            base
+            + """
+            SELECT id, titular, destino, origen, fecha, hora, duracion_seg,
+                   tipo, sentido, archivo_origen, fila_origen, contraparte
+              FROM seleccion
+             ORDER BY fecha DESC NULLS LAST, hora DESC NULLS LAST, id DESC
+             LIMIT %s OFFSET %s
+            """,
+            [*parametros, limite, desplazamiento],
+        )
+        filas = [dict(fila) for fila in cur.fetchall()]
+
+    resumen["duracion_total"] = int(resumen["duracion_total"] or 0)
+    resumen["pares"] = len(pares)
+
+    acumulado = {
+        numero: {"numero": numero, "total": 0, "duracion": 0} for numero in lista
+    }
+    for par in pares:
+        for clave in (par["a"], par["b"]):
+            if clave in acumulado:
+                acumulado[clave]["total"] += int(par["total"])
+                acumulado[clave]["duracion"] += int(par["duracion"])
+    por_numero = sorted(
+        acumulado.values(), key=lambda item: item["total"], reverse=True
     )
+
+    total = int(resumen["total"])
+    return {
+        "numeros": lista,
+        "resumen": resumen,
+        "por_numero": por_numero,
+        "pares": pares,
+        "total": total,
+        "pagina": pagina,
+        "tamano": limite,
+        "paginas": (total + limite - 1) // limite if total else 0,
+        "filas": filas,
+    }
 
 
 def vincular(
@@ -263,63 +398,8 @@ def vincular(
     pagina: int = 1,
     tamano: int = 50,
 ) -> dict[str, Any]:
-    """Comunicaciones entre dos líneas, en cualquier sentido."""
-    a = _solo_digitos(numero_a)
-    b = _solo_digitos(numero_b)
-    if not a or not b:
-        raise ValueError("Ambos números son obligatorios.")
-    if a == b:
-        raise ValueError("Los números A y B deben ser distintos.")
-
-    where = _where_vinculacion()
-    parametros = [a, b, b, b, a, a]
-    limite, desplazamiento = _limites(pagina, tamano)
-
-    with cursor(como_diccionario=True) as cur:
-        cur.execute(
-            f"""
-            SELECT count(*)                                        AS total,
-                   count(*) FILTER (WHERE titular = %s)            AS titular_a,
-                   count(*) FILTER (WHERE titular = %s)            AS titular_b,
-                   count(*) FILTER (WHERE sentido = 'Entrante')    AS entrantes,
-                   count(*) FILTER (WHERE sentido = 'Saliente')    AS salientes,
-                   coalesce(sum(duracion_seg), 0)                  AS duracion_total,
-                   coalesce(round(avg(duracion_seg))::int, 0)      AS duracion_promedio,
-                   count(DISTINCT fecha)                           AS dias,
-                   min(fecha)                                      AS primera_fecha,
-                   max(fecha)                                      AS ultima_fecha
-              FROM llamadas
-             WHERE {where}
-            """,
-            [a, b, *parametros],
-        )
-        resumen = dict(cur.fetchone())
-
-        cur.execute(
-            f"""
-            SELECT id, titular, destino, origen, fecha, hora, duracion_seg,
-                   tipo, sentido, archivo_origen, fila_origen
-              FROM llamadas
-             WHERE {where}
-             ORDER BY fecha DESC NULLS LAST, hora DESC NULLS LAST, id DESC
-             LIMIT %s OFFSET %s
-            """,
-            [*parametros, limite, desplazamiento],
-        )
-        filas = cur.fetchall()
-
-    total = int(resumen["total"])
-    resumen["duracion_total"] = int(resumen["duracion_total"] or 0)
-    return {
-        "numero_a": a,
-        "numero_b": b,
-        "resumen": resumen,
-        "total": total,
-        "pagina": pagina,
-        "tamano": limite,
-        "paginas": (total + limite - 1) // limite if total else 0,
-        "filas": filas,
-    }
+    """Compatibilidad: vinculación puntual entre dos líneas."""
+    return vincular_varios([numero_a, numero_b], pagina, tamano)
 
 
 def exportar_filas(

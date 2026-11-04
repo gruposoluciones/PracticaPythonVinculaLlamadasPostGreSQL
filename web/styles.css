@@ -261,6 +261,54 @@ body {
   flex-wrap: wrap;
 }
 
+.campo-completo { flex: 1 1 100%; }
+
+.entrada-grupo {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.entrada-grupo input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #eef2f9;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  padding: 4px 5px 4px 12px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-quitar {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #dbe4f3;
+  color: var(--texto-suave);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chip-quitar:hover { background: #fecaca; color: #991b1b; }
+
 /* ---------- Botones ---------- */
 
 .boton {
@@ -343,6 +391,35 @@ body {
 .insignia-sms { background: #fef3c7; color: #92400e; }
 .insignia-ok { background: #dcfce7; color: #166534; }
 .insignia-error { background: #fee2e2; color: #991b1b; }
+
+/* ---------- Matriz de contactos ---------- */
+
+.tabla.matriz {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabla.matriz th,
+.tabla.matriz td {
+  text-align: center;
+  padding: 7px 9px;
+}
+
+.tabla.matriz tbody th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--texto);
+  background: #fbfcfe;
+}
+
+.tabla.matriz td.celda-con-datos {
+  background: rgba(29, 78, 216, 0.08);
+  color: var(--primario-oscuro);
+  font-weight: 600;
+}
+
+.tabla.matriz td.celda-sin-datos { color: #cbd5e1; }
+.tabla.matriz td.celda-diagonal { background: #f1f5f9; color: #94a3b8; }
 
 /* ---------- Paginación y estados ---------- */
 

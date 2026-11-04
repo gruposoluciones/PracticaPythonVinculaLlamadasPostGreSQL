@@ -31,8 +31,9 @@ La solución funciona de punta a punta:
 | ETL con trazabilidad e idempotencia (`hash_fila`) | ✅ |
 | API FastAPI + frontend HTML | ✅ |
 | Subida de archivos desde la web | ✅ |
+| Consulta selectiva de 2 a 10 números (matriz y pares) | ✅ |
 | Exportación CSV | ✅ |
-| 83 tests unitarios | ✅ |
+| 93 tests unitarios | ✅ |
 
 Verificación rápida:
 
@@ -273,7 +274,7 @@ python -m pytest -q
 ## 12. Consultas de negocio (`consultas.py`)
 
 1. `listar_llamadas` — filtros + paginación.
-2. `vincular` — comunicaciones entre dos líneas en cualquier sentido.
+2. `vincular_varios` — comunicaciones entre 2 y 10 líneas; devuelve matriz de pares, participación por número y listado paginado. `vincular(a, b)` se mantiene como compatibilidad.
 3. `estadisticas` — totales, duración, voz/SMS, entrantes/salientes, días, líneas.
 4. `agregados` — por día, destino, origen, tipo o sentido.
 5. `exportar_filas` — CSV con tope.
@@ -299,6 +300,7 @@ Criterios:
 - [x] Teléfonos exactos, sin notación científica ni ceros perdidos.
 - [x] Filas inválidas contadas y logueadas, sin abortar.
 - [x] Web con búsqueda, filtros, paginación y exportación.
+- [x] Consulta selectiva de 2 a 10 números con matriz de contactos.
 - [x] Sin credenciales ni datos en el repositorio.
 - [x] `pytest` en verde.
 
