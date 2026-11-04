@@ -1,0 +1,28 @@
+# Secretos y configuración local
+.env
+
+# Entornos virtuales y cachés
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Registros
+*.log
+
+# Datos de entrada y procesados: pueden contener información personal
+data/entrada/*
+data/procesados/*
+!data/entrada/.gitkeep
+!data/procesados/.gitkeep
+
+# Archivos de datos sueltos
+*.xls
+*.xlsx
+*.csv
+*.zip
+
+# Excepciones para fixtures de test (sintéticos, sin datos reales)
+!tests/fixtures/*.csv

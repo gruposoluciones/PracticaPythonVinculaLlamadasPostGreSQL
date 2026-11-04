@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vincula · Consulta local de llamadas</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="barra-lateral">
+    <div class="marca">
+      <span class="marca-icono" aria-hidden="true">☎</span>
+      <div>
+        <strong>Vincula</strong>
+        <small>Consulta local</small>
+      </div>
+    </div>
+
+    <nav class="navegacion" aria-label="Secciones">
+      <button type="button" class="nav-item activo" data-vista="consulta">Consulta</button>
+      <button type="button" class="nav-item" data-vista="vinculacion">Vinculación</button>
+      <button type="button" class="nav-item" data-vista="estadisticas">Estadísticas</button>
+      <button type="button" class="nav-item" data-vista="cargas">Cargas</button>
+    </nav>
+
+    <div class="pie-lateral">
+      <span id="estado-punto" class="punto punto-espera" aria-hidden="true"></span>
+      <span id="estado-texto">Conectando…</span>
+    </div>
+  </aside>
+
+  <main class="contenido">
+    <header class="cabecera">
+      <div>
+        <h1 id="titulo-vista">Consulta</h1>
+        <p id="subtitulo-vista" class="subtitulo">Busca, filtra y compara comunicaciones.</p>
+      </div>
+      <div class="kpis-mini">
+        <div class="kpi-mini">
+          <span id="kpi-total">—</span>
+          <small>registros</small>
+        </div>
+        <div class="kpi-mini">
+          <span id="kpi-lineas">—</span>
+          <small>líneas</small>
+        </div>
+        <div class="kpi-mini">
+          <span id="kpi-rango">—</span>
+          <small>periodo</small>
+        </div>
+      </div>
+    </header>
+
+    <!-- CONSULTA -->
+    <section id="vista-consulta" class="vista activa" aria-labelledby="titulo-vista">
+      <form id="form-consulta" class="tarjeta filtros">
+        <div class="campo">
+          <label for="c-numero">Número</label>
+          <input id="c-numero" name="numero" type="text" inputmode="tel"
+                 placeholder="51977369934" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="c-desde">Desde</label>
+          <input id="c-desde" name="desde" type="date">
+        </div>
+        <div class="campo">
+          <label for="c-hasta">Hasta</label>
+          <input id="c-hasta" name="hasta" type="date">
+        </div>
+        <div class="campo">
+          <label for="c-tipo">Tipo</label>
+          <select id="c-tipo" name="tipo">
+            <option value="">Todos</option>
+            <option value="Voz">Voz</option>
+            <option value="SMS">SMS</option>
+            <option value="MMS">MMS</option>
+            <option value="Datos">Datos</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="c-sentido">Sentido</label>
+          <select id="c-sentido" name="sentido">
+            <option value="">Todos</option>
+            <option value="Entrante">Entrante</option>
+            <option value="Saliente">Saliente</option>
+          </select>
+        </div>
+        <label class="casilla">
+          <input id="c-parcial" name="parcial" type="checkbox">
+          <span>Coincidencia parcial</span>
+        </label>
+        <div class="acciones-filtro">
+          <button type="submit" class="boton primario">Buscar</button>
+          <button type="button" id="c-limpiar" class="boton">Limpiar</button>
+          <button type="button" id="c-exportar" class="boton">Exportar CSV</button>
+        </div>
+      </form>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cabecera">
+          <h2>Resultados</h2>
+          <span id="c-resumen" class="etiqueta">Sin búsqueda</span>
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Titular</th>
+                <th>Origen</th>
+                <th>Destino</th>
+                <th>Fecha</th>
+                <th>Hora</th>
+                <th class="numero">Duración</th>
+                <th>Tipo</th>
+                <th>Sentido</th>
+              </tr>
+            </thead>
+            <tbody id="c-tabla"></tbody>
+          </table>
+        </div>
+        <div id="c-vacio" class="vacio oculto">
+          <p>No hay resultados con estos filtros.</p>
+        </div>
+        <div class="paginacion">
+          <button type="button" id="c-anterior" class="boton" disabled>Anterior</button>
+          <span id="c-pagina" class="pagina-info">Página 0 de 0</span>
+          <button type="button" id="c-siguiente" class="boton" disabled>Siguiente</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- VINCULACIÓN -->
+    <section id="vista-vinculacion" class="vista" aria-labelledby="titulo-vista">
+      <form id="form-vinculacion" class="tarjeta filtros">
+        <div class="campo">
+          <label for="v-a">Número A</label>
+          <input id="v-a" name="a" type="text" inputmode="tel" placeholder="51977369934" required>
+        </div>
+        <div class="campo">
+          <label for="v-b">Número B</label>
+          <input id="v-b" name="b" type="text" inputmode="tel" placeholder="51946024620" required>
+        </div>
+        <div class="acciones-filtro">
+          <button type="submit" class="boton primario">Buscar vinculación</button>
+        </div>
+      </form>
+
+      <div id="v-kpis" class="rejilla-kpis oculto"></div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cabecera">
+          <h2>Comunicaciones entre ambas líneas</h2>
+          <span id="v-resumen" class="etiqueta">Sin búsqueda</span>
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Titular</th>
+                <th>Origen</th>
+                <th>Destino</th>
+                <th>Fecha</th>
+                <th>Hora</th>
+                <th class="numero">Duración</th>
+                <th>Tipo</th>
+                <th>Sentido</th>
+              </tr>
+            </thead>
+            <tbody id="v-tabla"></tbody>
+          </table>
+        </div>
+        <div id="v-vacio" class="vacio oculto">
+          <p>No se encontraron comunicaciones entre estos números.</p>
+          <p id="v-aviso-origen" class="nota oculto"></p>
+        </div>
+        <div class="paginacion">
+          <button type="button" id="v-anterior" class="boton" disabled>Anterior</button>
+          <span id="v-pagina" class="pagina-info">Página 0 de 0</span>
+          <button type="button" id="v-siguiente" class="boton" disabled>Siguiente</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESTADÍSTICAS -->
+    <section id="vista-estadisticas" class="vista" aria-labelledby="titulo-vista">
+      <form id="form-estadisticas" class="tarjeta filtros">
+        <div class="campo">
+          <label for="e-numero">Número</label>
+          <input id="e-numero" name="numero" type="text" inputmode="tel"
+                 placeholder="Opcional" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="e-desde">Desde</label>
+          <input id="e-desde" name="desde" type="date">
+        </div>
+        <div class="campo">
+          <label for="e-hasta">Hasta</label>
+          <input id="e-hasta" name="hasta" type="date">
+        </div>
+        <div class="campo">
+          <label for="e-tipo">Tipo</label>
+          <select id="e-tipo" name="tipo">
+            <option value="">Todos</option>
+            <option value="Voz">Voz</option>
+            <option value="SMS">SMS</option>
+            <option value="MMS">MMS</option>
+            <option value="Datos">Datos</option>
+          </select>
+        </div>
+        <div class="acciones-filtro">
+          <button type="submit" class="boton primario">Actualizar</button>
+        </div>
+      </form>
+
+      <div id="e-kpis" class="rejilla-kpis"></div>
+
+      <div class="rejilla-dos">
+        <div class="tarjeta">
+          <div class="tarjeta-cabecera"><h2>Top destinos</h2></div>
+          <div id="e-destinos" class="lista-barras"></div>
+        </div>
+        <div class="tarjeta">
+          <div class="tarjeta-cabecera"><h2>Distribución por tipo</h2></div>
+          <div id="e-tipos" class="lista-barras"></div>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cabecera"><h2>Actividad por día</h2></div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead>
+              <tr><th>Fecha</th><th class="numero">Comunicaciones</th><th class="numero">Duración</th></tr>
+            </thead>
+            <tbody id="e-dias"></tbody>
+          </table>
+        </div>
+        <div id="e-vacio" class="vacio oculto"><p>Sin datos para los filtros elegidos.</p></div>
+      </div>
+    </section>
+
+    <!-- CARGAS -->
+    <section id="vista-cargas" class="vista" aria-labelledby="titulo-vista">
+      <div class="tarjeta">
+        <div class="tarjeta-cabecera">
+          <h2>Cargar archivo</h2>
+          <span class="etiqueta">.xlsx · .xls · .csv</span>
+        </div>
+        <form id="form-carga" class="form-carga">
+          <input id="archivo" name="archivo" type="file"
+                 accept=".xlsx,.xlsm,.xls,.csv" required>
+          <button type="submit" class="boton primario">Cargar en PostgreSQL</button>
+        </form>
+        <p class="nota">
+          El formato se detecta automáticamente. Recargar el mismo archivo no duplica registros.
+        </p>
+        <div id="carga-resultado" class="resultado-carga oculto"></div>
+      </div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cabecera">
+          <h2>Historial de cargas</h2>
+          <button type="button" id="recargar-cargas" class="boton">Actualizar</button>
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Archivo</th>
+                <th>Formato</th>
+                <th class="numero">Leídas</th>
+                <th class="numero">Insertadas</th>
+                <th class="numero">Rechazadas</th>
+                <th>Estado</th>
+                <th>Inicio</th>
+              </tr>
+            </thead>
+            <tbody id="cargas-tabla"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="avisos" class="avisos" aria-live="polite"></div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

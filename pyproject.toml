@@ -1,0 +1,20 @@
+[project]
+name = "cargadatos"
+version = "1.0.0"
+description = "Carga de Excel/CSV de llamadas en PostgreSQL con consultas y web local"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+    "xlrd>=2.0.1",
+    "psycopg2-binary>=2.9",
+    "python-dotenv>=1.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+addopts = "-q"
