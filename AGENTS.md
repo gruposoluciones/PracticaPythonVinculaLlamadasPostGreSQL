@@ -37,8 +37,9 @@ La solución funciona de punta a punta:
 | API FastAPI + frontend HTML | ✅ |
 | Subida de archivos desde la web | ✅ |
 | Consulta selectiva de 2 a 10 números (matriz y pares) | ✅ |
+| Módulo número ↔ IMEI (búsqueda en ambos sentidos) | ✅ |
 | Exportación CSV | ✅ |
-| 146 tests unitarios | ✅ |
+| 147 tests unitarios | ✅ |
 
 Verificación rápida:
 
@@ -168,6 +169,7 @@ Base: **`comunicaciones`**, esquema `public`.
 
 - `v_vinculaciones`: filas con `origen` no nulo.
 - `v_resumen_diario`: agregados por fecha.
+- `v_vinculaciones_imei`: pares número-IMEI con registros, fechas, días, operadores y archivos.
 
 **Reglas innegociables:** teléfonos en `text`, nunca `bigint`; `hash_fila` único; índices en `(titular,destino)`, `(titular,origen)`, `(origen)`, `(fecha,hora)`.
 
@@ -312,6 +314,8 @@ python -m pytest -q
 6. `obtener_resumen` — indicadores globales + última carga.
 7. `listar_cargas` — historial.
 8. `normalizar_registro` (en `etl.py`) — normalización de una fila; es la función que usan los tests de campos NULL y clasificación.
+9. `vincular_imei_por_numero` / `vincular_numero_por_imei` — relación número ↔ IMEI sobre `v_vinculaciones_imei`.
+10. `listar_pares_imei` — listado paginado de todos los pares número-IMEI.
 
 Toda consulta nueva debe tener índice que la soporte y un test (o justificación de por qué no lo tiene).
 
@@ -337,8 +341,9 @@ Criterios:
 - [x] Filas inválidas contadas y logueadas, sin abortar.
 - [x] Web con búsqueda, filtros, paginación y exportación.
 - [x] Consulta selectiva de 2 a 10 números con matriz de contactos.
+- [x] Módulo número ↔ IMEI (búsqueda en ambos sentidos y pares registrados).
 - [x] Sin credenciales ni datos en el repositorio.
-- [x] `pytest` en verde (146 tests).
+- [x] `pytest` en verde (147 tests).
 
 ---
 

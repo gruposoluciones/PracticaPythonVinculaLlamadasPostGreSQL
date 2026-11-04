@@ -20,6 +20,7 @@
     <nav class="navegacion" aria-label="Secciones">
       <button type="button" class="nav-item activo" data-vista="consulta">Consulta</button>
       <button type="button" class="nav-item" data-vista="vinculacion">Vinculación</button>
+      <button type="button" class="nav-item" data-vista="imei">Número ↔ IMEI</button>
       <button type="button" class="nav-item" data-vista="estadisticas">Estadísticas</button>
       <button type="button" class="nav-item" data-vista="cargas">Cargas</button>
     </nav>
@@ -219,8 +220,71 @@
       </div>
     </section>
 
-    <!-- ESTADÍSTICAS -->
-    <section id="vista-estadisticas" class="vista" aria-labelledby="titulo-vista">
+    <!-- NÚMERO ↔ IMEI -->
+    <section id="vista-imei" class="vista" aria-labelledby="titulo-vista">
+      <form id="form-imei" class="tarjeta filtros">
+        <div class="campo">
+          <label for="i-valor" id="i-etiqueta">Número de celular</label>
+          <input id="i-valor" type="text" inputmode="tel"
+                 placeholder="907976887" autocomplete="off">
+        </div>
+        <div class="segmentado" role="group" aria-label="Buscar por">
+          <button type="button" class="boton segmento activo" data-modo="numero">Por número</button>
+          <button type="button" class="boton segmento" data-modo="imei">Por IMEI</button>
+        </div>
+        <div class="acciones-filtro">
+          <button type="submit" class="boton primario">Buscar</button>
+          <button type="button" id="i-limpiar" class="boton">Limpiar</button>
+        </div>
+      </form>
+
+      <div id="i-kpis" class="rejilla-kpis oculto"></div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cabecera">
+          <h2 id="i-titulo">IMEIs del número</h2>
+          <span id="i-resumen" class="etiqueta">Sin búsqueda</span>
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead id="i-cabecera"></thead>
+            <tbody id="i-tabla"></tbody>
+          </table>
+        </div>
+        <div id="i-vacio" class="vacio oculto">
+          <p>No hay IMEIs registrados para ese número.</p>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cabecera">
+          <h2>Todos los pares número-IMEI</h2>
+          <span id="i-pares-resumen" class="etiqueta">—</span>
+        </div>
+        <div class="tabla-contenedor">
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>Número</th>
+                <th>IMEI</th>
+                <th class="numero">Registros</th>
+                <th>Primera fecha</th>
+                <th>Última fecha</th>
+                <th>Operadores</th>
+              </tr>
+            </thead>
+            <tbody id="i-pares"></tbody>
+          </table>
+        </div>
+        <div class="paginacion">
+          <button type="button" id="i-anterior" class="boton" disabled>Anterior</button>
+          <span id="i-pagina" class="pagina-info">Página 0 de 0</span>
+          <button type="button" id="i-siguiente" class="boton" disabled>Siguiente</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESTADÍSTICAS -->    <section id="vista-estadisticas" class="vista" aria-labelledby="titulo-vista">
       <form id="form-estadisticas" class="tarjeta filtros">
         <div class="campo">
           <label for="e-numero">Número</label>

@@ -18,6 +18,7 @@ Aplicación **local** para cargar archivos Excel/CSV con registros de comunicaci
 - Web local con:
   - búsqueda por número, rango de fechas, tipo y sentido;
   - vinculación selectiva entre **2 y 10 líneas**, con matriz de contactos;
+  - **módulo Número ↔ IMEI**: todos los IMEIs de un número y todos los números de un IMEI;
   - estadísticas, top destinos y actividad por día;
   - exportación a CSV con todos los campos CDR;
   - carga de archivos desde el navegador.
@@ -93,6 +94,7 @@ Abre **http://127.0.0.1:8000**.
 |---|---|
 | **Consulta** | Filtrar por número, fechas, tipo y sentido; paginar y exportar |
 | **Vinculación** | Cruzar de 2 a 10 números seleccionados y ver matriz, pares y comunicaciones |
+| **Número ↔ IMEI** | Buscar un número y ver sus IMEIs, o un IMEI y ver sus números |
 | **Estadísticas** | Totales, duración, top destinos y actividad diaria |
 | **Cargas** | Subir archivos y revisar el historial |
 
@@ -112,6 +114,18 @@ La vista muestra:
 - el listado paginado con fecha, hora, duración, tipo y sentido.
 
 Los números se pueden quitar uno a uno con la **×** del chip, o todos con **Limpiar**. El botón *Consultar* se habilita al llegar a 2 y se bloquea al superar 10.
+
+### Número ↔ IMEI
+
+En la pestaña **Número ↔ IMEI**:
+
+1. Elige **Por número** o **Por IMEI**.
+2. Escribe el valor y pulsa **Buscar**.
+3. Si buscas un número, obtienes todos sus IMEIs con registros, fechas y operadores.
+4. Si buscas un IMEI, obtienes todos los números asociados.
+5. Puedes hacer clic en un IMEI o en un número para saltar a la búsqueda inversa.
+
+Debajo se listan **todos los pares número-IMEI** registrados, con paginación.
 
 ## Detección de columnas
 
@@ -181,6 +195,9 @@ etl_cargas 1 ──── * llamadas
 | GET | `/api/resumen` | Totales globales |
 | GET | `/api/llamadas` | Listado paginado y filtrado |
 | GET | `/api/vinculaciones?numeros=a,b,c` | Comunicaciones, matriz y pares entre 2 y 10 números (también acepta `a` y `b`) |
+| GET | `/api/imei/numero?numero=` | IMEIs registrados para un número |
+| GET | `/api/imei/equipo?imei=` | Números asociados a un IMEI |
+| GET | `/api/imei/pares` | Todos los pares número-IMEI, paginados |
 | GET | `/api/estadisticas` | Agregados del conjunto filtrado |
 | GET | `/api/agregados?por=dia\|destino\|origen\|tipo\|sentido` | Agrupaciones |
 | GET | `/api/cargas` | Historial de cargas |
@@ -266,8 +283,12 @@ Sí. El detector busca la cabecera en las primeras 20 filas.
 | Consultar 3 números | 75 comunicaciones, 2 pares | ✅ |
 | Intentar 1 número | HTTP 400 | ✅ |
 | Intentar 11 números | HTTP 400 | ✅ |
+| Número `907976887` → IMEIs | 1 IMEI, 1 registro | ✅ |
+| IMEI `861731050593753` → números | 4 números, 9 registros | ✅ |
+| Clic en un número/IMEI | Cambia a la búsqueda inversa | ✅ |
+| Pares número-IMEI | 9 pares paginados | ✅ |
 | Exportar CSV | Descarga con BOM, `;` y campos CDR | ✅ |
-| Tests automatizados | 146 passed | ✅ |
+| Tests automatizados | 147 passed | ✅ |
 
 ## Seguridad y datos
 

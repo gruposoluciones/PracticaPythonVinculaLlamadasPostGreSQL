@@ -14,6 +14,7 @@ const estado = {
   vista: "consulta",
   consulta: { pagina: 1, paginas: 0, tamano: 50 },
   vinculacion: { pagina: 1, paginas: 0, tamano: 50, numeros: [] },
+  imei: { modo: "numero", paresPagina: 1, paresPaginas: 0, tamano: 50 },
   resumen: null,
 };
 
@@ -117,6 +118,7 @@ function parametros(valores) {
 const TITULOS = {
   consulta: ["Consulta", "Busca, filtra y compara comunicaciones."],
   vinculacion: ["Vinculación", "Cruza de 2 a 10 números y consulta sus contactos."],
+  imei: ["Número ↔ IMEI", "Consulta los IMEIs asociados a un número y viceversa."],
   estadisticas: ["Estadísticas", "Volumen, duración y distribución de las comunicaciones."],
   cargas: ["Cargas", "Importa archivos y revisa el historial de procesos."],
 };
@@ -135,6 +137,9 @@ function cambiarVista(nombre) {
 
   if (nombre === "estadisticas") {
     cargarEstadisticas().catch((error) => aviso(error.message, "error"));
+  }
+  if (nombre === "imei") {
+    cargarParesImei(estado.imei.paresPagina).catch((error) => aviso(error.message, "error"));
   }
   if (nombre === "cargas") {
     cargarCargas().catch((error) => aviso(error.message, "error"));
@@ -464,6 +469,160 @@ async function buscarVinculacion(pagina = 1) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Número ↔ IMEI                                                       */
+/* ------------------------------------------------------------------ */
+
+function cambiarModoImei(modo) {
+  estado.imei.modo = modo;
+  $$(".segmento").forEach((boton) => {
+    boton.classList.toggle("activo", boton.dataset.modo === modo);
+  });
+  const esNumero = modo === "numero";
+  $("#i-etiqueta").textContent = esNumero
+    ? "Número de celular"
+    : "IMEI (14 a 16 dígitos)";
+  $("#i-valor").placeholder = esNumero ? "907976887" : "861731050593753";
+  $("#i-titulo").textContent = esNumero ? "IMEIs del número" : "Números del IMEI";
+  $("#i-vacio").querySelector("p").textContent = esNumero
+    ? "No hay IMEIs registrados para ese número."
+    : "No hay números registrados para ese IMEI.";
+}
+
+async function buscarImei() {
+  const valor = ($("#i-valor").value || "").replace(/\D/g, "");
+  const modo = estado.imei.modo;
+
+  if (modo === "numero" && (valor.length < 8 || valor.length > 15)) {
+    aviso("El número debe tener entre 8 y 15 dígitos.", "error");
+    return;
+  }
+  if (modo === "imei" && (valor.length < 14 || valor.length > 16)) {
+    aviso("El IMEI debe tener entre 14 y 16 dígitos.", "error");
+    return;
+  }
+
+  const boton = $("#form-imei button[type='submit']");
+  boton.disabled = true;
+  boton.textContent = "Buscando…";
+  try {
+    const datos = modo === "numero"
+      ? await api(`/api/imei/numero?${parametros({ numero: valor })}`)
+      : await api(`/api/imei/equipo?${parametros({ imei: valor })}`);
+    pintarResultadoImei(datos, modo);
+  } catch (error) {
+    aviso(error.message, "error");
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "Buscar";
+  }
+}
+
+function pintarResultadoImei(datos, modo) {
+  const esNumero = modo === "numero";
+  const filas = esNumero ? datos.imeis : datos.numeros;
+  const distintos = esNumero ? datos.total_imeis : datos.total_numeros;
+
+  pintarKpis($("#i-kpis"), [
+    [formatoNumero.format(distintos), esNumero ? "IMEIs distintos" : "números distintos"],
+    [formatoNumero.format(datos.total_registros), "registros"],
+  ]);
+
+  $("#i-titulo").textContent = esNumero
+    ? `IMEIs del número ${datos.numero}`
+    : `Números del IMEI ${datos.imei}`;
+  $("#i-resumen").textContent = `${formatoNumero.format(filas.length)} resultado(s)`;
+
+  const cabecera = $("#i-cabecera");
+  cabecera.textContent = "";
+  const filaCabecera = crear("tr");
+  const columnas = esNumero
+    ? ["IMEI", "Registros", "Primera fecha", "Última fecha", "Días", "Operadores"]
+    : ["Número", "Registros", "Primera fecha", "Última fecha", "Días", "Operadores"];
+  columnas.forEach((texto) => filaCabecera.append(crear("th", { texto })));
+  cabecera.append(filaCabecera);
+
+  const tbody = $("#i-tabla");
+  tbody.textContent = "";
+  const fragmento = document.createDocumentFragment();
+  filas.forEach((fila) => {
+    const tr = crear("tr");
+    const tdValor = crear("td");
+    const boton = crear("button", {
+      clase: "enlace-tabla",
+      texto: esNumero ? fila.imei : fila.numero,
+      atributos: { type: "button" },
+    });
+    boton.addEventListener("click", () => {
+      $("#i-valor").value = esNumero ? fila.imei : fila.numero;
+      cambiarModoImei(esNumero ? "imei" : "numero");
+      buscarImei();
+    });
+    tdValor.append(boton);
+
+    tr.append(
+      tdValor,
+      celda(formatoNumero.format(fila.registros), "numero"),
+      celda(formatearFecha(fila.primera_fecha)),
+      celda(formatearFecha(fila.ultima_fecha)),
+      celda(formatoNumero.format(fila.dias), "numero"),
+      celda(fila.operadores || "—"),
+    );
+    fragmento.append(tr);
+  });
+  tbody.append(fragmento);
+  $("#i-vacio").classList.toggle("oculto", filas.length > 0);
+}
+
+function limpiarImei() {
+  $("#i-valor").value = "";
+  $("#i-kpis").textContent = "";
+  $("#i-kpis").classList.add("oculto");
+  $("#i-cabecera").textContent = "";
+  $("#i-tabla").textContent = "";
+  $("#i-resumen").textContent = "Sin búsqueda";
+  $("#i-vacio").classList.add("oculto");
+  cambiarModoImei(estado.imei.modo);
+}
+
+async function cargarParesImei(pagina = 1) {
+  try {
+    const datos = await api(
+      `/api/imei/pares?pagina=${pagina}&tamano=${estado.imei.tamano}`,
+    );
+    estado.imei.paresPagina = datos.pagina;
+    estado.imei.paresPaginas = datos.paginas;
+
+    const tbody = $("#i-pares");
+    tbody.textContent = "";
+    const fragmento = document.createDocumentFragment();
+    datos.filas.forEach((fila) => {
+      const tr = crear("tr");
+      tr.append(
+        celda(fila.numero),
+        celda(fila.imei),
+        celda(formatoNumero.format(fila.registros), "numero"),
+        celda(formatearFecha(fila.primera_fecha)),
+        celda(formatearFecha(fila.ultima_fecha)),
+        celda(fila.operadores || "—"),
+      );
+      fragmento.append(tr);
+    });
+    if (!datos.filas.length) {
+      const tr = crear("tr");
+      const td = crear("td", { texto: "Todavía no hay registros con IMEI." });
+      td.colSpan = 6;
+      tr.append(td);
+      fragmento.append(tr);
+    }
+    tbody.append(fragmento);
+    $("#i-pares-resumen").textContent = `${formatoNumero.format(datos.total)} pares`;
+    actualizarPaginacion("i", datos.pagina, datos.paginas, datos.total, datos.tamano);
+  } catch (error) {
+    aviso(error.message, "error");
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Estadísticas                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -671,6 +830,17 @@ function conectarEventos() {
   $("#v-anterior").addEventListener("click", () => buscarVinculacion(estado.vinculacion.pagina - 1));
   $("#v-siguiente").addEventListener("click", () => buscarVinculacion(estado.vinculacion.pagina + 1));
 
+  $("#form-imei").addEventListener("submit", (evento) => {
+    evento.preventDefault();
+    buscarImei();
+  });
+  $$(".segmento").forEach((boton) => {
+    boton.addEventListener("click", () => cambiarModoImei(boton.dataset.modo));
+  });
+  $("#i-limpiar").addEventListener("click", limpiarImei);
+  $("#i-anterior").addEventListener("click", () => cargarParesImei(estado.imei.paresPagina - 1));
+  $("#i-siguiente").addEventListener("click", () => cargarParesImei(estado.imei.paresPagina + 1));
+
   $("#form-estadisticas").addEventListener("submit", (evento) => {
     evento.preventDefault();
     cargarEstadisticas().catch((error) => aviso(error.message, "error"));
@@ -685,6 +855,7 @@ function conectarEventos() {
 async function iniciar() {
   conectarEventos();
   pintarChips();
+  cambiarModoImei(estado.imei.modo);
   await verificarSalud();
   await cargarResumen();
   await buscarConsulta(1);

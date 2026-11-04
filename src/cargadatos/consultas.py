@@ -10,6 +10,7 @@ from datetime import date
 from typing import Any
 
 from cargadatos.db import cursor
+from cargadatos import normalizacion as norm
 from config.settings import obtener_settings
 
 MAX_TAMANO_PAGINA = 500
@@ -415,6 +416,90 @@ def vincular(
 ) -> dict[str, Any]:
     """Compatibilidad: vinculación puntual entre dos líneas."""
     return vincular_varios([numero_a, numero_b], pagina, tamano)
+
+
+def _numero_para_busqueda(valor: str) -> str:
+    digitos = _solo_digitos(valor)
+    if not 8 <= len(digitos) <= 15:
+        raise ValueError("El número debe tener entre 8 y 15 dígitos.")
+    return digitos
+
+
+def vincular_imei_por_numero(numero: str) -> dict[str, Any]:
+    """Todos los IMEI registrados para un número de celular."""
+    num = _numero_para_busqueda(numero)
+    with cursor(como_diccionario=True) as cur:
+        cur.execute(
+            """
+            SELECT imei, registros, primera_fecha, ultima_fecha, dias,
+                   operadores, archivos
+              FROM v_vinculaciones_imei
+             WHERE numero = %s
+             ORDER BY registros DESC, ultima_fecha DESC NULLS LAST, imei
+            """,
+            (num,),
+        )
+        filas = [dict(fila) for fila in cur.fetchall()]
+
+    return {
+        "numero": num,
+        "total_imeis": len(filas),
+        "total_registros": sum(int(fila["registros"]) for fila in filas),
+        "imeis": filas,
+    }
+
+
+def vincular_numero_por_imei(imei: str) -> dict[str, Any]:
+    """Todos los números asociados a un IMEI."""
+    valor = norm.normalizar_imei(imei)
+    if not valor:
+        raise ValueError("El IMEI debe tener entre 14 y 16 dígitos.")
+    with cursor(como_diccionario=True) as cur:
+        cur.execute(
+            """
+            SELECT numero, registros, primera_fecha, ultima_fecha, dias,
+                   operadores, archivos
+              FROM v_vinculaciones_imei
+             WHERE imei = %s
+             ORDER BY registros DESC, ultima_fecha DESC NULLS LAST, numero
+            """,
+            (valor,),
+        )
+        filas = [dict(fila) for fila in cur.fetchall()]
+
+    return {
+        "imei": valor,
+        "total_numeros": len(filas),
+        "total_registros": sum(int(fila["registros"]) for fila in filas),
+        "numeros": filas,
+    }
+
+
+def listar_pares_imei(pagina: int = 1, tamano: int = 50) -> dict[str, Any]:
+    """Listado paginado de todos los pares número-IMEI registrados."""
+    limite, desplazamiento = _limites(pagina, tamano)
+    with cursor(como_diccionario=True) as cur:
+        cur.execute("SELECT count(*) AS total FROM v_vinculaciones_imei")
+        total = int(cur.fetchone()["total"])
+        cur.execute(
+            """
+            SELECT numero, imei, registros, primera_fecha, ultima_fecha,
+                   dias, operadores, archivos
+              FROM v_vinculaciones_imei
+             ORDER BY registros DESC, numero, imei
+             LIMIT %s OFFSET %s
+            """,
+            (limite, desplazamiento),
+        )
+        filas = [dict(fila) for fila in cur.fetchall()]
+
+    return {
+        "total": total,
+        "pagina": pagina,
+        "tamano": limite,
+        "paginas": (total + limite - 1) // limite if total else 0,
+        "filas": filas,
+    }
 
 
 def exportar_filas(

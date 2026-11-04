@@ -111,3 +111,12 @@ def test_vincular_varios_valida_antes_de_consultar_la_base():
         consultas.vincular_varios([])
     with pytest.raises(ValueError):
         consultas.vincular_varios(["51900000001"])
+
+
+def test_vinculacion_imei_valida_antes_de_consultar_la_base():
+    with pytest.raises(ValueError):
+        consultas.vincular_imei_por_numero("abc")
+    with pytest.raises(ValueError):
+        consultas.vincular_imei_por_numero("123")
+    with pytest.raises(ValueError):
+        consultas.vincular_numero_por_imei("123")

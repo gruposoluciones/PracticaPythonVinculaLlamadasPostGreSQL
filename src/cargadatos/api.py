@@ -86,6 +86,7 @@ def _entero(valor: int, minimo: int, maximo: int) -> int:
     return max(minimo, min(int(valor), maximo))
 
 
+@app.get("/health")
 @app.get("/api/salud")
 def salud() -> dict[str, Any]:
     conectada = verificar_conexion()
@@ -138,6 +139,37 @@ def vinculaciones(
         return consultas.vincular_varios(seleccion, pagina, tamano)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/imei/numero")
+def imei_por_numero(
+    numero: str = Query(..., min_length=8, max_length=20),
+) -> dict[str, Any]:
+    """IMEIs registrados para un número de celular."""
+    try:
+        return consultas.vincular_imei_por_numero(numero)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/imei/equipo")
+def numeros_por_imei(
+    imei: str = Query(..., min_length=14, max_length=20),
+) -> dict[str, Any]:
+    """Números asociados a un IMEI."""
+    try:
+        return consultas.vincular_numero_por_imei(imei)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/imei/pares")
+def pares_imei(
+    pagina: int = Query(1, ge=1),
+    tamano: int = Query(50, ge=1, le=500),
+) -> dict[str, Any]:
+    """Listado paginado de pares número-IMEI."""
+    return consultas.listar_pares_imei(pagina, tamano)
 
 
 @app.get("/api/estadisticas")

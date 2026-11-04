@@ -27,6 +27,9 @@ CREATE INDEX IF NOT EXISTS idx_llamadas_archivo
 CREATE INDEX IF NOT EXISTS idx_llamadas_imei
     ON llamadas (imei);
 
+CREATE INDEX IF NOT EXISTS idx_llamadas_titular_imei
+    ON llamadas (titular, imei);
+
 CREATE INDEX IF NOT EXISTS idx_llamadas_celda
     ON llamadas (celda);
 
