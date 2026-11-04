@@ -1,6 +1,10 @@
 # Secretos y configuración local
 .env
 
+# Sistema Operativo
+.DS_Store
+Thumbs.db
+
 # Entornos virtuales y cachés
 .venv/
 venv/
