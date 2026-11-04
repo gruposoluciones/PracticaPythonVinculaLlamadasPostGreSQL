@@ -6,18 +6,23 @@ Aplicación **local** para cargar archivos Excel/CSV con registros de comunicaci
 
 ## Qué incluye
 
-- Carga de `.xlsx`, `.xlsm`, `.xls` y `.csv` con **detección automática de formato**.
+- Carga de `.xlsx`, `.xlsm`, `.xls` y `.csv` con **detección inteligente de columnas**.
+- Reconoce cabeceras en español e inglés, aunque haya filas de título encima.
+- Si no hay cabecera, **infiere las columnas por su contenido** (teléfonos, fechas, horas, IMEI, duración, tipo, sentido).
+- **Clasifica los números** como móvil, fijo o extranjero.
+- Extrae **IMEI, IMSI, celda, LAC, antena, latitud, longitud, operador, tecnología y roaming**.
+- Los campos ausentes o inválidos se guardan como **NULL**.
 - Normalización de teléfonos, fechas (incluido serial de Excel), horas (`HHMMSS`, `HH:MM:SS`, fracción del día) y duraciones.
 - Carga **idempotente**: recargar el mismo archivo no duplica registros (`hash_fila`).
 - Trazabilidad de cada carga en `etl_cargas` (leídas, insertadas, rechazadas, estado).
 - Web local con:
   - búsqueda por número, rango de fechas, tipo y sentido;
-  - vinculación entre dos líneas;
+  - vinculación selectiva entre **2 y 10 líneas**, con matriz de contactos;
   - estadísticas, top destinos y actividad por día;
-  - exportación a CSV;
+  - exportación a CSV con todos los campos CDR;
   - carga de archivos desde el navegador.
 - API documentada en `http://127.0.0.1:8000/api/docs`.
-- 83 tests automatizados de normalización, lectura y filtros.
+- 146 tests automatizados de normalización, detección, lectura y filtros.
 
 ## Requisitos
 
@@ -94,29 +99,53 @@ La vista muestra:
 
 Los números se pueden quitar uno a uno con la **×** del chip, o todos con **Limpiar**. El botón *Consultar* se habilita al llegar a 2 y se bloquea al superar 10.
 
-## Formatos soportados
+## Detección de columnas
 
-El lector detecta el layout por el número de columnas y la presencia de cabecera.
+El lector **no depende de posiciones fijas**. Aplica estas estrategias en orden:
 
-**17 columnas con cabecera** (`entel_base.xlsx`): incluye `Número origen`.
+1. **Cabecera con sinónimos (español/inglés).** Busca en las primeras 20 filas la que tenga más títulos reconocibles, aunque haya filas de título encima.
+2. **Layout legado** de 16/17 columnas (los archivos `entel*.xlsx`).
+3. **Inferencia por contenido** si no hay cabecera: perfila cada columna (teléfonos, fechas, horas, IMEI con Luhn, duración, tipo, sentido), descarta columnas réplica y asigna los roles.
+4. **Mapeo manual** si el archivo es atípico:
 
-| Col | Campo |
+```powershell
+.\scripts\cargar.ps1 -Archivo archivo.xlsx --mapeo "titular=0,origen=3,destino=1,fecha=4,hora=13,imei=17,celda=18"
+```
+
+### Campos reconocidos
+
+| Campo | Cabeceras de ejemplo |
 |---|---|
-| A | Línea titular |
-| B | Número destino |
-| C | (réplica de A, se ignora) |
-| D | Número origen |
-| E–I | Fecha (numérica, partes y texto) |
-| J–N | Hora (numérica, partes y texto) |
-| O | Duración en segundos |
-| P | Tipo |
-| Q | Entrante/Saliente |
+| `titular` | Línea Titular, MSISDN, Abonado, A-party |
+| `origen` | Número origen, Calling Number, Source, From |
+| `destino` | Número destino, Called Number, B-party, To |
+| `fecha` / `hora` | Fecha, Fechahora, Start Date, Start Time, Timestamp |
+| `duracion` | Duración (Segundos), Duration, Call Duration |
+| `tipo` | tipo, Call Type, Servicio |
+| `sentido` | Entrante/Saliente, Direction, MOC/MTC |
+| `imei` / `imsi` | IMEI, IMEISV, IMSI, SIM |
+| `celda` / `lac` | Cell ID, Celda, CGI, LAC, TAC |
+| `antena` | Site, Antena, BTS, eNodeB, Sector |
+| `latitud` / `longitud` | Latitude, Longitude, Lat, Lon |
+| `operador` | Operador, Empresa operadora, Carrier |
+| `tecnologia` | Technology, RAT, 4G, 5G |
+| `roaming` | Roaming, Itinerancia |
 
-**16 columnas** (con o sin cabecera): el mismo layout **sin** `Número origen`.
-En ese caso se pueden cruzar las comunicaciones salientes (titular → destino), pero
-no las entrantes, porque falta el número llamante.
+Los campos no detectados, vacíos o inválidos se guardan como **NULL**.
 
-También se acepta CSV separado por `;` o `,`.
+### Clasificación de números
+
+Cada número se clasifica como `movil`, `fijo`, `extranjero` o NULL, usando `PAIS_CODIGO` (por defecto `51`, Perú):
+
+- **móvil**: 9 dígitos que empiezan por 9 (con o sin 51);
+- **fijo**: 6–8 dígitos nacionales;
+- **extranjero**: 10+ dígitos que no empiezan por el código de país.
+
+### Otros formatos
+
+- CSV separado por `;` o `,`.
+- Filas de título antes de la cabecera (por ejemplo, `CONSULTA DE LISTA VINCULACIONES`).
+- Layout legado de 16 columnas (sin `Número origen`): se cruzan las salientes, pero no las entrantes.
 
 ## Modelo de datos
 
@@ -124,7 +153,8 @@ También se acepta CSV separado por `;` o `,`.
 etl_cargas 1 ──── * llamadas
 ```
 
-- `llamadas`: `titular`, `destino`, `origen`, `fecha`, `hora`, `duracion_seg`, `tipo`, `sentido`, `archivo_origen`, `fila_origen`, `hash_fila` (único).
+- `llamadas`: `titular`, `destino`, `origen`, `fecha`, `hora`, `duracion_seg`, `tipo`, `sentido`, `imei`, `imsi`, `celda`, `lac`, `antena`, `latitud`, `longitud`, `operador`, `tecnologia`, `roaming`, `titular_clase`, `origen_clase`, `destino_clase`, `archivo_origen`, `fila_origen`, `hash_fila` (único).
+- Todos los campos CDR son opcionales y se guardan como **NULL** cuando faltan.
 - `etl_cargas`: archivo, hash SHA-256, formato detectado, contadores y estado.
 - Vistas: `v_vinculaciones`, `v_resumen_diario`.
 - Los teléfonos se guardan como `TEXT` para no perder ceros ni precisión.
@@ -140,8 +170,8 @@ etl_cargas 1 ──── * llamadas
 | GET | `/api/estadisticas` | Agregados del conjunto filtrado |
 | GET | `/api/agregados?por=dia\|destino\|origen\|tipo\|sentido` | Agrupaciones |
 | GET | `/api/cargas` | Historial de cargas |
-| POST | `/api/cargar` | Subida de archivo (`multipart/form-data`) |
-| GET | `/api/exportar.csv` | Exportación de los filtros actuales |
+| POST | `/api/cargar` | Subida de archivo (`multipart/form-data`); acepta `mapeo` opcional |
+| GET | `/api/exportar.csv` | Exportación con todos los campos CDR de los filtros actuales |
 
 Parámetros comunes: `numero`, `desde`, `hasta`, `tipo`, `sentido`, `parcial`, `pagina`, `tamano`.
 
@@ -155,7 +185,7 @@ Parámetros comunes: `numero`, `desde`, `hasta`, `tipo`, `sentido`, `parcial`, `
 ├── legacy/                   # script original, solo referencia
 ├── scripts/                  # instalar, crear BD, cargar, arrancar, tests
 ├── sql/                      # esquema, índices y vistas
-├── src/cargadatos/           # normalización, lector, ETL, consultas y API
+├── src/cargadatos/           # normalización, mapeo, lector, ETL, consultas y API
 ├── tests/                    # pruebas unitarias
 ├── web/                      # frontend HTML/CSS/JS
 ├── AGENTS.md                 # convenciones para agentes
@@ -193,19 +223,37 @@ No. Cada fila tiene un hash único y las repetidas se ignoran; la carga lo infor
 **¿Los datos salen de mi PC?**
 No. La API y la web escuchan en `127.0.0.1` y la base de datos es local.
 
+**¿Cómo detecta el sistema las columnas?**
+Busca una fila de cabecera con sinónimos en español/inglés; si no la encuentra, analiza el contenido de cada columna (teléfonos, fechas, horas, IMEI, duración). También puede forzarse con `--mapeo`.
+
+**¿Cómo distingue móvil, fijo y extranjero?**
+Con `PAIS_CODIGO=51`: móvil = 9 dígitos que empiezan por 9; fijo = 6–8 dígitos nacionales; extranjero = 10+ dígitos que no empiezan por 51.
+
+**¿Qué pasa si falta un campo?**
+Se guarda como `NULL`, no como cero ni cadena vacía. Solo se rechaza una fila si no tiene ningún número telefónico.
+
+**¿Valida el IMEI?**
+Se guarda cualquier IMEI de 14–16 dígitos; para inferir columnas sin cabecera se usa el dígito de control Luhn como señal.
+
+**¿Puedo cargar un archivo con una fila de título antes de la cabecera?**
+Sí. El detector busca la cabecera en las primeras 20 filas.
+
 ## Verificación funcional (QA)
 
 | Caso | Resultado esperado | Estado |
 |---|---|---|
 | Cargar `entel_base.xlsx` (17 columnas) | 99 filas insertadas | ✅ |
 | Cargar CSV de 16 columnas | Detección automática y carga | ✅ |
+| Cargar `renteseg.xlsx` (9 columnas, título + cabecera) | 14/14 filas, sin rechazos | ✅ |
 | Recargar el mismo archivo | 0 insertadas, N duplicadas | ✅ |
+| Campos ausentes (IMEI, celda, duración…) | Guardados como `NULL` | ✅ |
+| Clasificación de números | 99 móviles en los datos de muestra | ✅ |
 | Consultar 2 números | Comunicaciones + 1 par | ✅ |
 | Consultar 3 números | 75 comunicaciones, 2 pares | ✅ |
 | Intentar 1 número | HTTP 400 | ✅ |
 | Intentar 11 números | HTTP 400 | ✅ |
-| Exportar CSV | Descarga con BOM y `;` | ✅ |
-| Tests automatizados | 93 passed | ✅ |
+| Exportar CSV | Descarga con BOM, `;` y campos CDR | ✅ |
+| Tests automatizados | 146 passed | ✅ |
 
 ## Seguridad y datos
 

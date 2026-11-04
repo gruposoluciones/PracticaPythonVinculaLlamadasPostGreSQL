@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg2
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
@@ -17,6 +17,7 @@ from cargadatos import consultas
 from cargadatos.db import verificar_conexion
 from cargadatos.etl import cargar_archivo
 from cargadatos.excel_reader import FormatoNoSoportado, es_archivo_soportado
+from cargadatos.mapeo import parsear_mapeo
 from config.settings import ConfiguracionInvalida, obtener_settings
 
 logging.basicConfig(
@@ -171,6 +172,7 @@ def cargas(limite: int = Query(20, ge=1, le=100)) -> list[dict[str, Any]]:
 @app.post("/api/cargar")
 def cargar(
     archivo: UploadFile = File(...),
+    mapeo: str | None = Form(None),
 ) -> dict[str, Any]:
     ajustes = obtener_settings()
     nombre = Path(archivo.filename or "").name
@@ -179,6 +181,13 @@ def cargar(
             status_code=400,
             detail="Formato no soportado. Use .xlsx, .xls o .csv.",
         )
+
+    mapeo_forzado = None
+    if mapeo:
+        try:
+            mapeo_forzado = parsear_mapeo(mapeo)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     limite_bytes = ajustes.max_subida_mb * 1024 * 1024
     contenido = archivo.file.read(limite_bytes + 1)
@@ -196,7 +205,12 @@ def cargar(
     try:
         with open(descriptor, "wb") as manejador:
             manejador.write(contenido)
-        resultado = cargar_archivo(ruta, mover=False, nombre_original=nombre)
+        resultado = cargar_archivo(
+            ruta,
+            mover=False,
+            nombre_original=nombre,
+            mapeo_forzado=mapeo_forzado,
+        )
         return resultado.como_dict()
     except FormatoNoSoportado as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -233,6 +247,19 @@ def exportar(
             "duracion_seg",
             "tipo",
             "sentido",
+            "imei",
+            "imsi",
+            "celda",
+            "lac",
+            "antena",
+            "latitud",
+            "longitud",
+            "operador",
+            "tecnologia",
+            "roaming",
+            "titular_clase",
+            "origen_clase",
+            "destino_clase",
             "archivo_origen",
         ]
     )
@@ -244,9 +271,22 @@ def exportar(
                 fila["origen"] or "",
                 fila["fecha"].isoformat() if fila["fecha"] else "",
                 fila["hora"].isoformat() if fila["hora"] else "",
-                fila["duracion_seg"],
+                "" if fila["duracion_seg"] is None else fila["duracion_seg"],
                 fila["tipo"] or "",
                 fila["sentido"] or "",
+                fila["imei"] or "",
+                fila["imsi"] or "",
+                fila["celda"] or "",
+                fila["lac"] or "",
+                fila["antena"] or "",
+                "" if fila["latitud"] is None else fila["latitud"],
+                "" if fila["longitud"] is None else fila["longitud"],
+                fila["operador"] or "",
+                fila["tecnologia"] or "",
+                "" if fila["roaming"] is None else ("si" if fila["roaming"] else "no"),
+                fila["titular_clase"] or "",
+                fila["origen_clase"] or "",
+                fila["destino_clase"] or "",
                 fila["archivo_origen"],
             ]
         )

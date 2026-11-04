@@ -77,7 +77,7 @@ def test_normalizar_hora_invalida(entrada):
 
 @pytest.mark.parametrize(
     ("entrada", "esperado"),
-    [(None, 0), ("", 0), ("0", 0), (34, 34), ("34", 34), ("34.0", 34), ("34.9", 34)],
+    [(None, None), ("", None), ("0", 0), (34, 34), ("34", 34), ("34.0", 34), ("34.9", 34)],
 )
 def test_normalizar_duracion(entrada, esperado):
     assert norm.normalizar_duracion(entrada) == esperado
@@ -132,3 +132,71 @@ def test_hash_fila_es_estable_y_sensible_al_contenido():
 def test_enmascarar_telefono():
     assert norm.enmascarar("51977369934") == "519****9934"
     assert norm.enmascarar(None) == ""
+
+
+@pytest.mark.parametrize(
+    ("numero", "esperado"),
+    [
+        ("51977369934", "movil"),
+        ("51946024620", "movil"),
+        ("51977369934", "movil"),
+        ("5112345678", "fijo"),
+        ("519999999", "fijo"),
+        ("12025550123", "extranjero"),
+        ("573001234567", "extranjero"),
+        ("123", None),
+        (None, None),
+    ],
+)
+def test_clasificar_telefono(numero, esperado):
+    assert norm.clasificar_telefono(numero) == esperado
+
+
+@pytest.mark.parametrize(
+    ("imei", "esperado"),
+    [
+        ("490154203237518", "490154203237518"),
+        ("49-0154-203237-518", "490154203237518"),
+        ("490154203237519", "490154203237519"),
+        ("123456789012345", "123456789012345"),
+        ("12345", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_normalizar_imei(imei, esperado):
+    assert norm.normalizar_imei(imei) == esperado
+
+
+def test_es_imei_valido():
+    assert norm.es_imei_valido("490154203237518")
+    assert not norm.es_imei_valido("490154203237519")
+    assert not norm.es_imei_valido("12345")
+
+
+@pytest.mark.parametrize(
+    ("valor", "esperado"),
+    [
+        ("716061234567890", "716061234567890"),
+        ("71606123456789", "71606123456789"),
+        ("12345", None),
+        ("", None),
+    ],
+)
+def test_normalizar_imsi(valor, esperado):
+    assert norm.normalizar_imsi(valor) == esperado
+
+
+def test_normalizar_coordenada():
+    assert norm.normalizar_coordenada("-12,0469", 90) == -12.0469
+    assert norm.normalizar_coordenada("91", 90) is None
+    assert norm.normalizar_coordenada("-77.0428", 180) == -77.0428
+    assert norm.normalizar_coordenada("texto", 90) is None
+
+
+@pytest.mark.parametrize(
+    ("valor", "esperado"),
+    [("1", True), ("si", True), ("no", False), ("0", False), ("", None), ("tal vez", None)],
+)
+def test_normalizar_booleano(valor, esperado):
+    assert norm.normalizar_booleano(valor) is esperado

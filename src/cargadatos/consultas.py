@@ -107,7 +107,10 @@ def listar_llamadas(
         cur.execute(
             f"""
             SELECT id, titular, destino, origen, fecha, hora, duracion_seg,
-                   tipo, sentido, archivo_origen, fila_origen
+                   tipo, sentido, imei, imsi, celda, lac, antena,
+                   latitud, longitud, operador, tecnologia, roaming,
+                   titular_clase, origen_clase, destino_clase,
+                   archivo_origen, fila_origen
               FROM llamadas
              WHERE {where}
              ORDER BY fecha DESC NULLS LAST, hora DESC NULLS LAST, id DESC
@@ -180,6 +183,12 @@ def estadisticas(
                    count(*) FILTER (WHERE tipo = 'SMS')                  AS sms,
                    count(*) FILTER (WHERE sentido = 'Entrante')          AS entrantes,
                    count(*) FILTER (WHERE sentido = 'Saliente')          AS salientes,
+                   count(*) FILTER (WHERE titular_clase = 'movil')       AS moviles,
+                   count(*) FILTER (WHERE titular_clase = 'fijo')        AS fijos,
+                   count(*) FILTER (WHERE titular_clase = 'extranjero')  AS extranjeros,
+                   count(*) FILTER (WHERE imei IS NOT NULL)              AS con_imei,
+                   count(*) FILTER (WHERE celda IS NOT NULL)             AS con_celda,
+                   count(*) FILTER (WHERE duracion_seg IS NULL)          AS sin_duracion,
                    count(DISTINCT fecha)                                 AS dias,
                    count(DISTINCT titular)                               AS lineas,
                    min(fecha)                                            AS primera_fecha,
@@ -301,7 +310,10 @@ def vincular_varios(
     base = f"""
         WITH base AS (
             SELECT id, titular, destino, origen, fecha, hora, duracion_seg,
-                   tipo, sentido, archivo_origen, fila_origen,
+                   tipo, sentido, imei, imsi, celda, lac, antena,
+                   latitud, longitud, operador, tecnologia, roaming,
+                   titular_clase, origen_clase, destino_clase,
+                   archivo_origen, fila_origen,
                    COALESCE(NULLIF(origen, titular), NULLIF(destino, titular)) AS contraparte
               FROM llamadas
         ),
@@ -354,7 +366,10 @@ def vincular_varios(
             base
             + """
             SELECT id, titular, destino, origen, fecha, hora, duracion_seg,
-                   tipo, sentido, archivo_origen, fila_origen, contraparte
+                   tipo, sentido, imei, imsi, celda, lac, antena,
+                   latitud, longitud, operador, tecnologia, roaming,
+                   titular_clase, origen_clase, destino_clase,
+                   archivo_origen, fila_origen, contraparte
               FROM seleccion
              ORDER BY fecha DESC NULLS LAST, hora DESC NULLS LAST, id DESC
              LIMIT %s OFFSET %s
@@ -418,7 +433,9 @@ def exportar_filas(
         cur.execute(
             f"""
             SELECT titular, destino, origen, fecha, hora, duracion_seg,
-                   tipo, sentido, archivo_origen
+                   tipo, sentido, imei, imsi, celda, lac, antena,
+                   latitud, longitud, operador, tecnologia, roaming,
+                   titular_clase, origen_clase, destino_clase, archivo_origen
               FROM llamadas
              WHERE {where}
              ORDER BY fecha DESC NULLS LAST, hora DESC NULLS LAST, id DESC

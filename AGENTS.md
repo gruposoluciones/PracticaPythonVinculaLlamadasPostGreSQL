@@ -25,15 +25,20 @@ La solución funciona de punta a punta:
 
 | Componente | Estado |
 |---|---|
-| Lectura Excel/CSV con detección de layout | ✅ |
+| Lectura Excel/CSV con detección inteligente de columnas | ✅ |
+| Detección de cabecera con sinónimos ES/EN (y filas de título) | ✅ |
+| Inferencia de columnas por contenido si no hay cabecera | ✅ |
 | Normalización (teléfonos, fechas, horas, duración) | ✅ |
+| Clasificación de números (móvil/fijo/extranjero) | ✅ |
+| Campos CDR ampliados (IMEI, IMSI, celda, LAC, antena, GPS…) | ✅ |
+| Campos ausentes guardados como NULL | ✅ |
 | Esquema PostgreSQL + índices + vistas | ✅ |
 | ETL con trazabilidad e idempotencia (`hash_fila`) | ✅ |
 | API FastAPI + frontend HTML | ✅ |
 | Subida de archivos desde la web | ✅ |
 | Consulta selectiva de 2 a 10 números (matriz y pares) | ✅ |
 | Exportación CSV | ✅ |
-| 93 tests unitarios | ✅ |
+| 146 tests unitarios | ✅ |
 
 Verificación rápida:
 
@@ -83,13 +88,16 @@ Dependencias en `requirements.txt`. No añadir librerías sin justificar y sin a
 ├── sql/
 │   ├── 001_schema.sql
 │   ├── 002_indexes.sql
-│   └── 003_views.sql
+│   ├── 003_views.sql
+│   └── 004_cdr_extendido.sql  # migración de bases anteriores
 ├── src/cargadatos/
 │   ├── __init__.py
 │   ├── db.py                 # conexión, transacciones, cursor
-│   ├── excel_reader.py       # lectura + detección de layout
-│   ├── normalizacion.py      # reglas de normalización
+│   ├── mapeo.py              # detección de columnas CDR
+│   ├── excel_reader.py       # lectura + cabecera/inferencia
+│   ├── normalizacion.py      # reglas de normalización y clasificación
 │   ├── etl.py                # orquestación + CLI
+│   ├── mantenimiento.py      # reclasificación de datos existentes
 │   ├── consultas.py          # SQL de negocio
 │   └── api.py                # endpoints + frontend estático
 ├── web/
@@ -101,12 +109,15 @@ Dependencias en `requirements.txt`. No añadir librerías sin justificar y sin a
 │   ├── inicializar_bd.ps1
 │   ├── crear_usuario_app.ps1
 │   ├── cargar.ps1
+│   ├── reclasificar.ps1
 │   ├── run.ps1
 │   └── pruebas.ps1
 ├── legacy/                   # script original, solo referencia
 └── tests/
     ├── test_normalizacion.py
+    ├── test_mapeo.py
     ├── test_excel_reader.py
+    ├── test_etl.py
     └── test_consultas.py
 ```
 
@@ -126,12 +137,23 @@ Base: **`comunicaciones`**, esquema `public`.
 | `carga_id` | `bigint` FK → `etl_cargas` | `ON DELETE SET NULL` |
 | `titular` | `text NOT NULL` | Dígitos, 8–15 (CHECK) |
 | `destino` | `text` | Número marcado |
-| `origen` | `text` | Número llamante (solo layout de 17 columnas) |
-| `fecha` | `date` | |
-| `hora` | `time` | |
-| `duracion_seg` | `integer NOT NULL` | `CHECK >= 0` |
+| `origen` | `text` | Número llamante |
+| `fecha` | `date` | NULL si no venía |
+| `hora` | `time` | NULL si no venía |
+| `duracion_seg` | `integer` | `CHECK >= 0`; NULL si no venía |
 | `tipo` | `text` | `Voz`, `SMS`, `MMS`, `Datos` |
 | `sentido` | `text` | `Entrante`, `Saliente` |
+| `imei` | `text` | 14–16 dígitos |
+| `imsi` | `text` | 14–16 dígitos |
+| `celda` / `lac` | `text` | Cell ID / LAC o TAC |
+| `antena` | `text` | Site, BTS, eNodeB, sector |
+| `latitud` / `longitud` | `numeric(9,6)` | Rango validado |
+| `operador` | `text` | Empresa operadora |
+| `tecnologia` | `text` | 2G/3G/4G/5G, RAT |
+| `roaming` | `boolean` | NULL si no se informa |
+| `titular_clase` | `text` | `movil`, `fijo`, `extranjero` o NULL |
+| `origen_clase` | `text` | Igual |
+| `destino_clase` | `text` | Igual |
 | `archivo_origen` | `text NOT NULL` | |
 | `fila_origen` | `integer NOT NULL` | 1-based |
 | `hash_fila` | `text NOT NULL UNIQUE` | Idempotencia |
@@ -149,38 +171,32 @@ Base: **`comunicaciones`**, esquema `public`.
 
 ---
 
-## 6. Formatos de entrada
+## 6. Detección de columnas
 
-El lector (`excel_reader.py`) detecta el layout por número de columnas y presencia de cabecera. **No asumir el formato.**
+El lector (`mapeo.py` + `excel_reader.py`) aplica estas estrategias, en orden:
 
-### 17 columnas con cabecera
+1. **Cabecera con sinónimos ES/EN.** Busca entre las primeras 20 filas la que tenga más títulos reconocibles, aunque haya filas de título encima. Ejemplos: `MSISDN`, `Abonado`, `A-party` → `titular`; `Called Number`, `B-party`, `To` → `destino`; `Calling Number`, `Source` → `origen`; `Fechahora`, `Start Date` → `fecha`; `Cell ID`, `CGI` → `celda`; `Site`, `BTS`, `eNodeB` → `antena`; `Empresa operadora` → `operador`.
+2. **Layout legado de 17/16 columnas** (`legacy_17_*`, `legacy_16_*`).
+3. **Inferencia por contenido** (`cdr_inferido`): perfila cada columna (teléfonos, fechas, horas, IMEI con Luhn, duración, tipo, sentido), descarta columnas réplica y asigna los roles.
+4. **Mapeo manual** (`manual`) cuando el archivo es atípico:
 
-A `Línea Titular` · B `Número destino` · C réplica de A (ignorar) · D `Número origen` ·
-E fecha `YYYYMMDD` · F año · G mes · H día · I fecha `DD/MM/YYYY` ·
-J hora `HHMMSS` · K hora · L minuto · M segundo · N hora `HH:MM:SS` ·
-O `Duración (Segundos)` · P `tipo` · Q `Entrante/Saliente`.
+```powershell
+.\scripts\cargar.ps1 -Archivo archivo.xlsx --mapeo "titular=0,origen=3,destino=1,fecha=4,hora=13,imei=17,celda=18"
+```
 
-Formato detectado: `base_17_con_cabecera`.
+Formatos detectados: `cdr_con_cabecera`, `cdr_inferido`, `legacy_17_con_cabecera`, `legacy_16_con_cabecera`, `legacy_17_sin_cabecera`, `legacy_16_sin_cabecera`, `manual`.
 
-### 16 columnas (con o sin cabecera)
+Si no se identifica ninguna columna de número → `FormatoNoSoportado` y no se inserta nada.
 
-El mismo layout **sin** `Número origen`. Las posiciones se desplazan:
+> La inferencia sin cabecera es heurística. Para CDR atípicos, usar `--mapeo` y añadir un test con ese layout.
 
-A titular · B destino · C réplica · D fecha · E año · F mes · G día ·
-H fecha alterna · I hora numérica · J hora · K minuto · L segundo ·
-M hora texto · N duración · O tipo · P sentido.
+### Clasificación de números
 
-Formatos detectados: `sin_origen_16_con_cabecera` / `sin_origen_16_sin_cabecera`.
+`clasificar_telefono(numero, codigo_pais)` devuelve `movil`, `fijo`, `extranjero` o NULL. Usa `PAIS_CODIGO` (51 por defecto) y se aplica a `titular`, `origen` y `destino`.
 
-> En el layout de 16 columnas `origen` queda `NULL`: la UI avisa de que no se pueden cruzar líneas.
+### Campos opcionales
 
-### CSV
-
-Se detecta el separador (`;` o `,`) automáticamente con `sep=None`. Mismo criterio de columnas.
-
-### Detección de cabecera
-
-Se considera cabecera si la primera fila contiene etiquetas conocidas o si no incluye ningún valor con 8+ dígitos. Si el archivo no tiene 16 ni 17 columnas → `FormatoNoSoportado` y la carga se marca como error **sin insertar nada**.
+Todos los campos CDR salvo `titular` pueden quedar en NULL. Una fila solo se rechaza cuando no contiene ningún número utilizable; la falta de fecha, hora, duración, IMEI o celda no la invalida.
 
 ---
 
@@ -188,15 +204,21 @@ Se considera cabecera si la primera fila contiene etiquetas conocidas o si no in
 
 - **Leer todo como texto** (`dtype=str`). Los teléfonos pueden venir como `5.1977369934E10`.
 - **Teléfonos:** quitar espacios, guiones, paréntesis y `+`; conservar solo dígitos; 8–15. No truncar. Se conservan ceros iniciales.
-- **Fechas:** `YYYYMMDD`, `DD/MM/YYYY`, `YYYY-MM-DD`, `datetime` o serial de Excel (época `1899-12-30`).
-- **Horas:** `HHMMSS` (con o sin cero inicial), `H:MM`, `HH:MM:SS`, `time`, `datetime` o fracción del día.
-- **Duración:** entero ≥ 0; vacío = 0; negativo o no numérico = fila rechazada.
-- **Tipo/sentido:** se normalizan a `Voz`, `SMS`, `MMS`, `Datos` / `Entrante`, `Saliente`.
-- **Filas inválidas:** no abortan la carga; se cuentan en `filas_rechazadas` y se guardan hasta 50 motivos.
-- **Idempotencia:** `sha256(titular|origen|destino|fecha|hora|duracion|tipo|sentido)`.
+- **Fechas:** `YYYYMMDD`, `DD/MM/YYYY`, `YYYY-MM-DD`, `datetime` o serial de Excel (época `1899-12-30`, limitado a 1900–2100 para no confundir horas).
+- **Horas:** `HHMMSS` (con o sin cero inicial), `H:MM`, `HH:MM:SS`, `time`, `datetime` o fracción del día. Acepta `fechahora` combinada (`2026-06-13 12:02:23`).
+- **Componentes:** si no hay fecha/hora completa, se construyen con año/mes/día y hora/minuto/segundo.
+- **Duración:** entero ≥ 0; vacío o inválido → **NULL**.
+- **Tipo/sentido:** `Voz`, `SMS`, `MMS`, `Datos`, `USSD` / `Entrante`, `Saliente`. Si falta el sentido, se deduce de titular/origen/destino.
+- **IMEI:** 14–16 dígitos; `es_imei_valido` (Luhn) solo se usa para inferir columnas.
+- **IMSI:** 14–16 dígitos. **Celda/LAC/antena/operador/tecnología:** texto.
+- **Coordenadas:** latitud −90..90, longitud −180..180; fuera de rango → NULL.
+- **Roaming:** booleano (`si/no`, `1/0`, `true/false`); desconocido → NULL.
+- **Clasificación:** `clasificar_telefono` aplica `PAIS_CODIGO` a titular, origen y destino.
+- **Filas inválidas:** solo se rechazan las que no tienen ningún número; se cuentan en `filas_rechazadas` y se guardan hasta 50 motivos.
+- **Idempotencia:** `sha256` de los campos clave; si hay IMEI/celda/antena se añaden al hash para no colapsar registros distintos (los hashes antiguos sin estos campos no cambian).
 - **Logs:** usar `enmascarar()` para teléfonos (`519****9934`).
 
-Cada regla nueva debe tener test en `tests/test_normalizacion.py`.
+Cada regla nueva debe tener test en `tests/test_normalizacion.py` o `tests/test_etl.py`.
 
 ---
 
@@ -213,6 +235,10 @@ Cada regla nueva debe tener test en `tests/test_normalizacion.py`.
 # Carga
 .\scripts\cargar.ps1 -Archivo .\data\entrada\archivo.xlsx
 .\scripts\cargar.ps1 -Archivo a.xlsx, b.csv -Mover
+.\scripts\cargar.ps1 -Archivo atipico.xlsx --mapeo "titular=0,origen=3,destino=1,fecha=4,hora=13"
+
+# Reclasificar números ya cargados (móvil/fijo/extranjero)
+.\scripts\reclasificar.ps1
 
 # Servidor (API + web)
 .\scripts\run.ps1
@@ -275,11 +301,12 @@ python -m pytest -q
 
 1. `listar_llamadas` — filtros + paginación.
 2. `vincular_varios` — comunicaciones entre 2 y 10 líneas; devuelve matriz de pares, participación por número y listado paginado. `vincular(a, b)` se mantiene como compatibilidad.
-3. `estadisticas` — totales, duración, voz/SMS, entrantes/salientes, días, líneas.
+3. `estadisticas` — totales, duración, voz/SMS, entrantes/salientes, móviles/fijos/extranjeros, IMEI/celda informados, días y líneas.
 4. `agregados` — por día, destino, origen, tipo o sentido.
-5. `exportar_filas` — CSV con tope.
+5. `exportar_filas` — CSV con tope y todos los campos CDR.
 6. `obtener_resumen` — indicadores globales + última carga.
 7. `listar_cargas` — historial.
+8. `normalizar_registro` (en `etl.py`) — normalización de una fila; es la función que usan los tests de campos NULL y clasificación.
 
 Toda consulta nueva debe tener índice que la soporte y un test (o justificación de por qué no lo tiene).
 
@@ -295,14 +322,18 @@ Los tests actuales **no requieren base de datos** (normalización, lector y filt
 
 Criterios:
 
-- [x] `.xls`, `.xlsx` y `.csv` con detección automática.
+- [x] `.xls`, `.xlsx` y `.csv` con detección inteligente de columnas.
+- [x] Cabecera con sinónimos ES/EN y filas de título antes de la cabecera.
+- [x] Inferencia por contenido cuando no hay cabecera y mapeo manual disponible.
+- [x] Clasificación móvil/fijo/extranjero y campos CDR ampliados.
+- [x] Campos ausentes guardados como NULL.
 - [x] Recargar no duplica (`hash_fila`).
 - [x] Teléfonos exactos, sin notación científica ni ceros perdidos.
 - [x] Filas inválidas contadas y logueadas, sin abortar.
 - [x] Web con búsqueda, filtros, paginación y exportación.
 - [x] Consulta selectiva de 2 a 10 números con matriz de contactos.
 - [x] Sin credenciales ni datos en el repositorio.
-- [x] `pytest` en verde.
+- [x] `pytest` en verde (146 tests).
 
 ---
 
@@ -311,6 +342,8 @@ Criterios:
 - ❌ Guardar teléfonos como `bigint`.
 - ❌ Leer Excel con `dtype` por defecto y confiar en la inferencia de pandas.
 - ❌ Asumir que todos los archivos tienen las mismas columnas.
+- ❌ Mapear columnas solo por posición cuando hay cabecera reconocible.
+- ❌ Inventar valores para campos ausentes: deben ser NULL.
 - ❌ `f"SELECT ... WHERE titular = '{numero}'"`.
 - ❌ Cargar un Excel completo en memoria y renderizarlo entero en el HTML.
 - ❌ Subir `data/`, `.env` o `*.log` a git.

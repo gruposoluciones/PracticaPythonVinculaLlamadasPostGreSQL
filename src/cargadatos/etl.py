@@ -1,4 +1,8 @@
-"""ETL: carga de Excel/CSV a PostgreSQL con trazabilidad e idempotencia."""
+"""ETL: carga de CDR (Excel/CSV) a PostgreSQL con detección de columnas.
+
+Los campos opcionales ausentes se guardan como ``NULL``. Solo se rechaza una
+fila cuando no contiene ningún número telefónico utilizable.
+"""
 from __future__ import annotations
 
 import argparse
@@ -8,11 +12,12 @@ import shutil
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime, time as time_type
 from pathlib import Path
 
 from psycopg2.extras import execute_values
 
+from cargadatos import mapeo as deteccion_mapeo
 from cargadatos import normalizacion as norm
 from cargadatos.db import conexion
 from cargadatos.excel_reader import leer_archivo
@@ -22,16 +27,18 @@ logger = logging.getLogger(__name__)
 SQL_INSERTAR = """
     INSERT INTO llamadas (
         carga_id, titular, destino, origen, fecha, hora,
-        duracion_seg, tipo, sentido, archivo_origen, fila_origen, hash_fila
+        duracion_seg, tipo, sentido,
+        imei, imsi, celda, lac, antena, latitud, longitud,
+        operador, tecnologia, roaming,
+        titular_clase, origen_clase, destino_clase,
+        archivo_origen, fila_origen, hash_fila
     )
     VALUES %s
     ON CONFLICT (hash_fila) DO NOTHING
     RETURNING id
 """
 
-PLANTILLA_INSERTAR = (
-    "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-)
+PLANTILLA_INSERTAR = "(" + ", ".join(["%s"] * 25) + ")"
 
 
 @dataclass
@@ -45,6 +52,7 @@ class ResultadoCarga:
     filas_duplicadas: int
     filas_rechazadas: int
     motivos: list[str] = field(default_factory=list)
+    mapeo: dict[str, int] = field(default_factory=dict)
     segundos: float = 0.0
     carga_id: int | None = None
 
@@ -61,45 +69,99 @@ def hash_archivo(ruta: Path) -> str:
     return digest.hexdigest()
 
 
-def _normalizar_fila(registro: dict[str, str]) -> tuple[dict[str, object] | None, str | None]:
-    """Normaliza una fila cruda. Devuelve (registro, motivo_de_rechazo)."""
-    titular = norm.normalizar_telefono(registro.get("titular"))
+def _entero(valor: object, minimo: int, maximo: int) -> int | None:
+    crudo = norm.texto(valor)
+    if not crudo:
+        return None
+    try:
+        numero = int(float(crudo.replace(",", ".")))
+    except ValueError:
+        return None
+    return numero if minimo <= numero <= maximo else None
+
+
+def _fecha_por_componentes(registro: dict[str, str]) -> date | None:
+    anio = _entero(registro.get("anio"), 1900, 2100)
+    mes = _entero(registro.get("mes"), 1, 12)
+    dia = _entero(registro.get("dia"), 1, 31)
+    if not (anio and mes and dia):
+        return None
+    try:
+        return date(anio, mes, dia)
+    except ValueError:
+        return None
+
+
+def _hora_por_componentes(registro: dict[str, str]) -> time_type | None:
+    hora = _entero(registro.get("hora_num"), 0, 23)
+    minuto = _entero(registro.get("minuto"), 0, 59)
+    segundo = _entero(registro.get("segundo"), 0, 59)
+    if hora is None:
+        return None
+    return time_type(hora, minuto or 0, segundo or 0)
+
+
+def normalizar_registro(
+    registro: dict[str, str],
+    codigo_pais: str = "51",
+) -> tuple[dict[str, object] | None, str | None]:
+    """Normaliza una fila cruda. Devuelve ``(registro, motivo_de_rechazo)``."""
+    fecha = norm.normalizar_fecha(registro.get("fecha"))
+    hora = norm.normalizar_hora(registro.get("hora"))
+
+    combinada = registro.get("fecha_hora")
+    if combinada:
+        fecha = fecha or norm.normalizar_fecha(combinada)
+        hora = hora or norm.normalizar_hora(combinada)
+
+    fecha = fecha or norm.normalizar_fecha(registro.get("fecha_alterna"))
+    hora = hora or norm.normalizar_hora(registro.get("hora_alterna"))
+    fecha = fecha or _fecha_por_componentes(registro)
+    hora = hora or _hora_por_componentes(registro)
+
+    origen = norm.normalizar_telefono(registro.get("origen"))
+    destino = norm.normalizar_telefono(registro.get("destino"))
+    titular = (
+        norm.normalizar_telefono(registro.get("titular"))
+        or origen
+        or destino
+    )
     if not titular:
-        return None, "titular ausente o inválido"
+        return None, "sin número titular, origen ni destino"
 
-    origen = None
-    if registro.get("origen"):
-        origen = norm.normalizar_telefono(registro["origen"])
-        if not origen:
-            return None, "origen inválido"
-
-    destino = None
-    if registro.get("destino"):
-        destino = norm.normalizar_telefono(registro["destino"])
-        if not destino:
-            return None, "destino inválido"
-
-    fecha = norm.normalizar_fecha(registro.get("fecha")) or norm.normalizar_fecha(
-        registro.get("fecha_alterna")
-    )
-    if not fecha:
-        return None, "fecha ausente o inválida"
-
-    hora = norm.normalizar_hora(registro.get("hora")) or norm.normalizar_hora(
-        registro.get("hora_alterna")
-    )
-    if not hora:
-        return None, "hora ausente o inválida"
+    sentido = norm.normalizar_sentido(registro.get("sentido"))
+    if not sentido and origen and destino:
+        if origen == titular and destino != titular:
+            sentido = "Saliente"
+        elif destino == titular and origen != titular:
+            sentido = "Entrante"
 
     duracion = norm.normalizar_duracion(registro.get("duracion"))
-    if duracion is None:
-        return None, "duración inválida"
-
     tipo = norm.normalizar_tipo(registro.get("tipo"))
-    sentido = norm.normalizar_sentido(registro.get("sentido"))
+
+    imei = norm.normalizar_imei(registro.get("imei"))
+    imsi = norm.normalizar_imsi(registro.get("imsi"))
+    celda = norm.normalizar_identificador(registro.get("celda"))
+    lac = norm.normalizar_identificador(registro.get("lac"))
+    antena = norm.normalizar_identificador(registro.get("antena"))
+    latitud = norm.normalizar_coordenada(registro.get("latitud"), 90)
+    longitud = norm.normalizar_coordenada(registro.get("longitud"), 180)
+    operador = norm.normalizar_identificador(registro.get("operador"))
+    tecnologia = norm.normalizar_identificador(registro.get("tecnologia"))
+    roaming = norm.normalizar_booleano(registro.get("roaming"))
 
     hash_fila = norm.calcular_hash_fila(
-        titular, origen, destino, fecha, hora, duracion, tipo, sentido
+        titular,
+        origen,
+        destino,
+        fecha,
+        hora,
+        duracion,
+        tipo,
+        sentido,
+        imei=imei,
+        celda=celda,
+        antena=antena,
     )
 
     return (
@@ -112,6 +174,19 @@ def _normalizar_fila(registro: dict[str, str]) -> tuple[dict[str, object] | None
             "duracion_seg": duracion,
             "tipo": tipo,
             "sentido": sentido,
+            "imei": imei,
+            "imsi": imsi,
+            "celda": celda,
+            "lac": lac,
+            "antena": antena,
+            "latitud": latitud,
+            "longitud": longitud,
+            "operador": operador,
+            "tecnologia": tecnologia,
+            "roaming": roaming,
+            "titular_clase": norm.clasificar_telefono(titular, codigo_pais),
+            "origen_clase": norm.clasificar_telefono(origen, codigo_pais),
+            "destino_clase": norm.clasificar_telefono(destino, codigo_pais),
             "fila_origen": int(registro.get("fila_origen") or 0),
             "hash_fila": hash_fila,
         },
@@ -156,16 +231,16 @@ def cargar_archivo(
     ruta: str | Path,
     mover: bool = False,
     nombre_original: str | None = None,
+    mapeo_forzado: dict[str, int] | None = None,
 ) -> ResultadoCarga:
-    """Carga un archivo completo y devuelve el resumen de la operación.
+    """Carga un archivo completo y devuelve el resumen de la operación."""
+    from config.settings import obtener_settings
 
-    Cada lote de inserción se ejecuta en una transacción. Los errores de una
-    fila no abortan la carga: se cuentan y se informan en ``motivos``.
-    """
     ruta = Path(ruta)
     nombre = nombre_original or ruta.name
     inicio = time.monotonic()
     sha = hash_archivo(ruta)
+    ajustes = obtener_settings()
     carga_id: int | None = None
 
     try:
@@ -181,17 +256,17 @@ def cargar_archivo(
                 )
                 carga_id = int(cur.fetchone()[0])
 
-        tabla = leer_archivo(ruta)
+        tabla = leer_archivo(ruta, mapeo_forzado=mapeo_forzado)
 
         validos: list[tuple[object, ...]] = []
         motivos: list[str] = []
         for registro in tabla.filas:
-            normalizado, motivo = _normalizar_fila(registro)
+            normalizado, motivo = normalizar_registro(
+                registro, codigo_pais=ajustes.pais_codigo
+            )
             if normalizado is None:
                 if len(motivos) < 50:
-                    motivos.append(
-                        f"fila {registro.get('fila_origen')}: {motivo}"
-                    )
+                    motivos.append(f"fila {registro.get('fila_origen')}: {motivo}")
                 continue
             validos.append(
                 (
@@ -204,6 +279,19 @@ def cargar_archivo(
                     normalizado["duracion_seg"],
                     normalizado["tipo"],
                     normalizado["sentido"],
+                    normalizado["imei"],
+                    normalizado["imsi"],
+                    normalizado["celda"],
+                    normalizado["lac"],
+                    normalizado["antena"],
+                    normalizado["latitud"],
+                    normalizado["longitud"],
+                    normalizado["operador"],
+                    normalizado["tecnologia"],
+                    normalizado["roaming"],
+                    normalizado["titular_clase"],
+                    normalizado["origen_clase"],
+                    normalizado["destino_clase"],
                     nombre,
                     normalizado["fila_origen"],
                     normalizado["hash_fila"],
@@ -253,6 +341,7 @@ def cargar_archivo(
             filas_duplicadas=len(validos) - insertadas,
             filas_rechazadas=tabla.total_filas - len(validos),
             motivos=motivos,
+            mapeo=tabla.mapeo,
             segundos=round(time.monotonic() - inicio, 3),
             carga_id=carga_id,
         )
@@ -282,7 +371,7 @@ def _configurar_logging(verbose: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Carga archivos Excel/CSV de llamadas en PostgreSQL."
+        description="Carga archivos CDR (Excel/CSV) en PostgreSQL."
     )
     parser.add_argument("archivos", nargs="+", help="Ruta(s) de los archivos a cargar")
     parser.add_argument(
@@ -290,20 +379,32 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Mover el archivo a data/procesados tras una carga correcta",
     )
+    parser.add_argument(
+        "--mapeo",
+        help=(
+            "Forzar columnas: 'titular=0,origen=3,destino=1,fecha=4,hora=13,"
+            "duracion=14,tipo=15,sentido=16,imei=17,celda=18'"
+        ),
+    )
     parser.add_argument("--verbose", action="store_true", help="Mostrar detalle de depuración")
     args = parser.parse_args(argv)
 
     _configurar_logging(args.verbose)
+    mapeo_forzado = deteccion_mapeo.parsear_mapeo(args.mapeo) if args.mapeo else None
+
     fallos = 0
     for nombre in args.archivos:
         print(f"\n=== Cargando {nombre} ===")
         try:
-            resultado = cargar_archivo(nombre, mover=args.mover)
+            resultado = cargar_archivo(
+                nombre, mover=args.mover, mapeo_forzado=mapeo_forzado
+            )
         except Exception as exc:
             fallos += 1
             print(f"ERROR: {exc}", file=sys.stderr)
             continue
         print(f"Formato detectado : {resultado.formato}")
+        print(f"Columnas          : {resultado.mapeo}")
         print(f"Filas leídas      : {resultado.filas_leidas}")
         print(f"Filas insertadas  : {resultado.filas_insertadas}")
         print(f"Duplicadas        : {resultado.filas_duplicadas}")

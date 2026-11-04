@@ -204,9 +204,12 @@ function pintarFilas(tbody, filas, desplazamiento) {
       celda(fila.destino || "—"),
       celda(formatearFecha(fila.fecha)),
       celda(fila.hora || "—"),
-      celda(formatearDuracion(fila.duracion_seg), "numero"),
+      celda(fila.duracion_seg === null ? "—" : formatearDuracion(fila.duracion_seg), "numero"),
       celdaInsignia(fila.tipo, "tipo"),
       celdaInsignia(fila.sentido, "sentido"),
+      celda(fila.imei || "—"),
+      celda(fila.celda || "—"),
+      celda(fila.titular_clase || "—"),
     );
     fragmento.append(tr);
   });
@@ -595,6 +598,14 @@ function pintarResultadoCarga(resultado) {
     const lista = crear("ul");
     resultado.motivos.forEach((motivo) => lista.append(crear("li", { texto: motivo })));
     contenedor.append(lista);
+  }
+  if (resultado.mapeo && Object.keys(resultado.mapeo).length) {
+    const columnas = Object.entries(resultado.mapeo)
+      .map(([campo, indice]) => `${campo}=col ${Number(indice) + 1}`)
+      .join(" · ");
+    contenedor.append(
+      crear("p", { clase: "nota", texto: `Columnas detectadas: ${columnas}` }),
+    );
   }
   contenedor.classList.remove("oculto");
 }

@@ -24,5 +24,14 @@ CREATE INDEX IF NOT EXISTS idx_llamadas_sentido
 CREATE INDEX IF NOT EXISTS idx_llamadas_archivo
     ON llamadas (archivo_origen);
 
+CREATE INDEX IF NOT EXISTS idx_llamadas_imei
+    ON llamadas (imei);
+
+CREATE INDEX IF NOT EXISTS idx_llamadas_celda
+    ON llamadas (celda);
+
+CREATE INDEX IF NOT EXISTS idx_llamadas_antena
+    ON llamadas (antena);
+
 CREATE INDEX IF NOT EXISTS idx_etl_cargas_iniciado
     ON etl_cargas (iniciado_en DESC);

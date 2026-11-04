@@ -63,7 +63,7 @@ if ($existe -ne "1") {
     Write-Host "La base de datos '$BaseDatos' ya existe." -ForegroundColor DarkGray
 }
 
-foreach ($archivo in @("001_schema.sql", "002_indexes.sql", "003_views.sql")) {
+foreach ($archivo in @("001_schema.sql", "002_indexes.sql", "003_views.sql", "004_cdr_extendido.sql")) {
     $ruta = Join-Path $raiz "sql\$archivo"
     Write-Host "Aplicando $archivo..." -ForegroundColor Cyan
     & $psql -U $AdminUsuario -d $BaseDatos -v ON_ERROR_STOP=1 -f $ruta

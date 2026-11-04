@@ -89,7 +89,8 @@ def normalizar_fecha(valor: object) -> date | None:
         return None
 
     # Serial de Excel (1 = 1900-01-01; se usa 1899-12-30 por el bug de 1900).
-    if 1 <= numero <= 2_958_465:
+    # Se limita a 1900-2100 para no confundir horas HHMMSS con fechas.
+    if 1 <= numero <= 73_415:
         return (_EPOCA_EXCEL + timedelta(days=numero)).date()
     return None
 
@@ -104,6 +105,11 @@ def normalizar_hora(valor: object) -> time | None:
     crudo = texto(valor)
     if not crudo:
         return None
+
+    if " " in crudo:
+        crudo = crudo.rsplit(" ", 1)[-1].strip()
+    elif "T" in crudo:
+        crudo = crudo.split("T", 1)[-1].strip()
 
     coincidencia = _RE_HORA_TEXTO.match(crudo)
     if coincidencia:
@@ -141,10 +147,10 @@ def _construir_hora(hora: int, minuto: int, segundo: int) -> time | None:
 
 
 def normalizar_duracion(valor: object) -> int | None:
-    """Duración en segundos. Vacío equivale a 0; negativo o inválido es error."""
+    """Duración en segundos. Vacío queda como NULL; negativo o inválido, NULL."""
     crudo = texto(valor)
     if not crudo:
-        return 0
+        return None
     crudo = crudo.replace(",", ".")
     try:
         numero = Decimal(crudo)
@@ -164,10 +170,13 @@ def normalizar_tipo(valor: object) -> str | None:
         "voz": "Voz",
         "llamada": "Voz",
         "voice": "Voz",
+        "call": "Voz",
         "sms": "SMS",
         "mms": "MMS",
         "datos": "Datos",
         "data": "Datos",
+        "internet": "Datos",
+        "ussd": "USSD",
     }
     return equivalencias.get(crudo.lower(), crudo)
 
@@ -182,12 +191,119 @@ def normalizar_sentido(valor: object) -> str | None:
         "in": "Entrante",
         "entrada": "Entrante",
         "recibida": "Entrante",
+        "incoming": "Entrante",
+        "mtc": "Entrante",
+        "mt": "Entrante",
+        "terminada": "Entrante",
         "saliente": "Saliente",
         "out": "Saliente",
         "salida": "Saliente",
         "enviada": "Saliente",
+        "outgoing": "Saliente",
+        "moc": "Saliente",
+        "mo": "Saliente",
+        "originada": "Saliente",
     }
     return equivalencias.get(crudo.lower(), crudo.title())
+
+
+def _luhn_valido(digitos: str) -> bool:
+    """Valida el dígito de control Luhn (usado por IMEI)."""
+    if not digitos.isdigit():
+        return False
+    suma = 0
+    for posicion, caracter in enumerate(reversed(digitos)):
+        valor = int(caracter)
+        if posicion % 2 == 1:
+            valor *= 2
+            if valor > 9:
+                valor -= 9
+        suma += valor
+    return suma % 10 == 0
+
+
+def normalizar_imei(valor: object) -> str | None:
+    """IMEI/IMEISV: 14-16 dígitos.
+
+    No se exige Luhn porque algunos exportadores no lo calculan; para inferir
+    columnas se usa ``es_imei_valido``.
+    """
+    digitos = re.sub(r"\D", "", texto(valor))
+    return digitos if 14 <= len(digitos) <= 16 else None
+
+
+def es_imei_valido(valor: object) -> bool:
+    """IMEI de 15 dígitos con dígito de control Luhn correcto."""
+    digitos = normalizar_imei(valor)
+    return bool(digitos and len(digitos) == 15 and _luhn_valido(digitos))
+
+
+def normalizar_imsi(valor: object) -> str | None:
+    """IMSI: 14-16 dígitos (MCC + MNC + MSIN)."""
+    digitos = re.sub(r"\D", "", texto(valor))
+    return digitos if 14 <= len(digitos) <= 16 else None
+
+
+def normalizar_identificador(valor: object, maximo: int = 64) -> str | None:
+    """Identificador técnico (celda, LAC, antena, operador...)."""
+    crudo = texto(valor)
+    if not crudo or len(crudo) > maximo:
+        return None
+    return crudo
+
+
+def normalizar_coordenada(valor: object, limite: float) -> float | None:
+    """Latitud (-90..90) o longitud (-180..180)."""
+    crudo = texto(valor).replace(",", ".")
+    if not crudo:
+        return None
+    try:
+        numero = float(crudo)
+    except ValueError:
+        return None
+    if not -limite <= numero <= limite:
+        return None
+    return numero
+
+
+def normalizar_booleano(valor: object) -> bool | None:
+    """Convierte valores de roaming a booleano; vacío o desconocido, NULL."""
+    crudo = texto(valor).lower()
+    if crudo in {"1", "si", "sí", "true", "yes", "y", "roaming"}:
+        return True
+    if crudo in {"0", "no", "false", "n"}:
+        return False
+    return None
+
+
+def clasificar_telefono(numero: object, codigo_pais: str = "51") -> str | None:
+    """Clasifica un número como ``movil``, ``fijo``, ``extranjero`` o NULL.
+
+    Para Perú (código 51): móvil = 9 dígitos que empiezan por 9; fijo = 6-8
+    dígitos nacionales. Cualquier número de 10+ dígitos que no empiece por el
+    código de país se considera extranjero.
+    """
+    digitos = normalizar_telefono(numero)
+    if not digitos:
+        return None
+
+    if codigo_pais and digitos.startswith(codigo_pais):
+        nacional = digitos[len(codigo_pais) :]
+        if len(nacional) == 9 and nacional.startswith("9"):
+            return "movil"
+        if 6 <= len(nacional) <= 8:
+            return "fijo"
+        if len(nacional) > 9 and nacional.startswith("9"):
+            return "movil"
+        return None
+
+    if len(digitos) == 9 and digitos.startswith("9"):
+        return "movil"
+    if 6 <= len(digitos) <= 8:
+        return "fijo"
+    if len(digitos) >= 10:
+        return "extranjero"
+    return None
 
 
 def calcular_hash_fila(
@@ -196,21 +312,30 @@ def calcular_hash_fila(
     destino: str | None,
     fecha: date | None,
     hora: time | None,
-    duracion_seg: int,
+    duracion_seg: int | None,
     tipo: str | None,
     sentido: str | None,
+    imei: str | None = None,
+    celda: str | None = None,
+    antena: str | None = None,
 ) -> str:
-    """Hash estable de los campos clave para evitar duplicados al recargar."""
+    """Hash estable de los campos clave para evitar duplicados al recargar.
+
+    Los campos técnicos (IMEI/celda/antena) solo se incluyen cuando están
+    presentes, para no invalidar los hashes de cargas anteriores.
+    """
     partes = [
         titular,
         origen or "",
         destino or "",
         fecha.isoformat() if fecha else "",
         hora.isoformat() if hora else "",
-        str(duracion_seg),
+        "" if duracion_seg is None else str(duracion_seg),
         tipo or "",
         sentido or "",
     ]
+    if imei or celda or antena:
+        partes.extend([imei or "", celda or "", antena or ""])
     return hashlib.sha256("|".join(partes).encode("utf-8")).hexdigest()
 
 

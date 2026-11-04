@@ -35,6 +35,7 @@ class Settings:
     api_port: int = 8000
     max_filas: int = 500
     max_subida_mb: int = 25
+    pais_codigo: str = "51"
     directorio_entrada: Path = field(default=RAIZ / "data" / "entrada")
     directorio_procesados: Path = field(default=RAIZ / "data" / "procesados")
     directorio_web: Path = field(default=RAIZ / "web")
@@ -81,4 +82,5 @@ def obtener_settings() -> Settings:
         api_port=_entero("API_PORT", 8000),
         max_filas=_entero("MAX_FILAS", 500),
         max_subida_mb=_entero("MAX_SUBIDA_MB", 25),
+        pais_codigo=os.getenv("PAIS_CODIGO", "51"),
     )
