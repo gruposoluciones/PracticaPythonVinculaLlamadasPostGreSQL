@@ -5,6 +5,7 @@ import csv
 import io
 import logging
 import tempfile
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -18,11 +19,20 @@ from cargadatos.db import verificar_conexion
 from cargadatos.etl import cargar_archivo
 from cargadatos.excel_reader import FormatoNoSoportado, es_archivo_soportado
 from cargadatos.mapeo import parsear_mapeo
-from config.settings import ConfiguracionInvalida, obtener_settings
+from config.settings import ConfiguracionInvalida, RAIZ, obtener_settings
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        RotatingFileHandler(
+            RAIZ / "app.log",
+            maxBytes=1_000_000,
+            backupCount=3,
+            encoding="utf-8",
+        ),
+    ],
 )
 logger = logging.getLogger(__name__)
 

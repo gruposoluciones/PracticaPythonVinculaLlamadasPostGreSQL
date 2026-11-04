@@ -32,6 +32,20 @@ Aplicación **local** para cargar archivos Excel/CSV con registros de comunicaci
 | PostgreSQL | 18.6 (sirve 14+) |
 | PowerShell | 5.1 o superior (Windows) |
 
+## Inicio rápido en Windows
+
+**Doble clic en `iniciar.bat`.** El script arranca el servidor y abre el navegador en `http://127.0.0.1:8000`.
+
+Si algo falla, ejecuta:
+
+```powershell
+.\scripts\diagnostico.ps1
+```
+
+Comprueba Python, dependencias, PostgreSQL, credenciales, tablas, puerto y API, e indica exactamente qué componente está mal.
+
+> No abras `web\index.html` con doble clic: la web necesita la API local. Usa siempre `http://127.0.0.1:8000`.
+
 ## Instalación rápida
 
 ```powershell
@@ -275,7 +289,11 @@ Sí. El detector busca la cabecera en las primeras 20 filas.
 | `permission denied for table llamadas` | El usuario de la app no tiene permisos | Ejecuta `.\scripts\crear_usuario_app.ps1` |
 | `No se encontró psql.exe` | PostgreSQL no está en `PATH` | Instala PostgreSQL o agrega `bin` al `PATH` |
 | `password authentication failed` | Contraseña incorrecta | Revisa `.env` o vuelve a ejecutar `crear_usuario_app.ps1` |
-| `Address already in use` | Puerto 8000 ocupado | Cambia `API_PORT` en `.env` |
+| `Address already in use` | Puerto 8000 ocupado | El script reinicia su propia instancia; si es otro programa, cambia `API_PORT` en `.env` |
+| La página carga pero no hay datos | Base vacía o filtros activos | Revisa la pestaña **Cargas** y limpia los filtros |
+| Doble clic en `run.ps1` no hace nada | Windows no ejecuta `.ps1` con doble clic | Usa `iniciar.bat` |
+| La web se abre en blanco o sin datos | Abriste `web/index.html` directamente | Entra por `http://127.0.0.1:8000` |
+| Error inesperado | — | Ejecuta `.\scripts\diagnostico.ps1` y revisa `app.log` |
 | Una carga muestra 0 insertadas y N duplicadas | El archivo ya se cargó | Es el comportamiento esperado (idempotencia) |
 
 ## Historia

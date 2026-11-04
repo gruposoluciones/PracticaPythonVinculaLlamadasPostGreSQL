@@ -76,6 +76,7 @@ Dependencias en `requirements.txt`. No añadir librerías sin justificar y sin a
 .
 ├── AGENTS.md
 ├── README.md
+├── iniciar.bat               # doble clic para arrancar y abrir el navegador
 ├── requirements.txt
 ├── pyproject.toml            # configuración de pytest y metadatos
 ├── conftest.py               # añade src/ y la raíz al PYTHONPATH
@@ -110,6 +111,7 @@ Dependencias en `requirements.txt`. No añadir librerías sin justificar y sin a
 │   ├── crear_usuario_app.ps1
 │   ├── cargar.ps1
 │   ├── reclasificar.ps1
+│   ├── diagnostico.ps1
 │   ├── run.ps1
 │   └── pruebas.ps1
 ├── legacy/                   # script original, solo referencia
@@ -242,6 +244,9 @@ Cada regla nueva debe tener test en `tests/test_normalizacion.py` o `tests/test_
 
 # Servidor (API + web)
 .\scripts\run.ps1
+
+# Diagnóstico
+.\scripts\diagnostico.ps1
 
 # Tests
 .\scripts\pruebas.ps1
