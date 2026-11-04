@@ -33,16 +33,19 @@ Aplicación **local** para cargar archivos Excel/CSV con registros de comunicaci
 # 1. Dependencias (crea .venv y .env)
 .\scripts\instalar.ps1
 
-# 2. Edita .env y define DB_PASSWORD (contraseña de PostgreSQL)
+# 2. Ajusta .env si tu PostgreSQL no está en localhost:5432
 notepad .env
 
-# 3. Crea la base y aplica el esquema
+# 3. Crea la base y aplica el esquema (pide la contraseña de postgres)
 .\scripts\inicializar_bd.ps1
 
-# 4. Coloca tus archivos en data\entrada y cárgalos
+# 4. Crea el usuario de la aplicación y guarda su contraseña en .env
+.\scripts\crear_usuario_app.ps1
+
+# 5. Coloca tus archivos en data\entrada y cárgalos
 .\scripts\cargar.ps1 -Archivo .\data\entrada\entel_base.xlsx
 
-# 5. Arranca la aplicación
+# 6. Arranca la aplicación
 .\scripts\run.ps1
 ```
 
@@ -152,6 +155,7 @@ python -m pytest -q
 ## Seguridad y datos
 
 - La web y la API escuchan **solo en `127.0.0.1`**.
+- La aplicación usa un usuario dedicado (`vincula`) con permisos mínimos; el superusuario solo se usa en los scripts de administración.
 - Las credenciales viven en `.env`, que está en `.gitignore`.
 - Las consultas usan parámetros (`%s`); no se concatena entrada del usuario.
 - La exportación tiene un tope de 50 000 filas y los listados de 500 por página.
@@ -165,8 +169,9 @@ python -m pytest -q
 | Síntoma | Causa probable | Solución |
 |---|---|---|
 | `Falta DB_PASSWORD` | No existe `.env` | `Copy-Item .env.example .env` y edita el valor |
+| `permission denied for table llamadas` | El usuario de la app no tiene permisos | Ejecuta `.\scripts\crear_usuario_app.ps1` |
 | `No se encontró psql.exe` | PostgreSQL no está en `PATH` | Instala PostgreSQL o agrega `bin` al `PATH` |
-| `password authentication failed` | Contraseña incorrecta | Revisa `DB_PASSWORD` en `.env` |
+| `password authentication failed` | Contraseña incorrecta | Revisa `.env` o vuelve a ejecutar `crear_usuario_app.ps1` |
 | `Address already in use` | Puerto 8000 ocupado | Cambia `API_PORT` en `.env` |
 | Una carga muestra 0 insertadas y N duplicadas | El archivo ya se cargó | Es el comportamiento esperado (idempotencia) |
 

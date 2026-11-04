@@ -1,8 +1,12 @@
 # Crea la base de datos (si no existe) y aplica el esquema, índices y vistas.
-# Requiere la contraseña en .env (DB_PASSWORD) o en $env:PGPASSWORD.
+# Usa credenciales de ADMINISTRACIÓN (por defecto postgres), no el usuario de la app.
+#
+#   .\scripts\inicializar_bd.ps1
+#
+# La contraseña se toma de DB_ADMIN_PASSWORD o PGPASSWORD; si no existen, se pide.
 param(
     [string]$BaseDatos = "",
-    [string]$Usuario = ""
+    [string]$AdminUsuario = ""
 )
 
 $ErrorActionPreference = "Continue"
@@ -23,13 +27,20 @@ if (Test-Path $archivoEnv) {
 }
 
 if (-not $BaseDatos) { $BaseDatos = if ($env:DB_NAME) { $env:DB_NAME } else { "comunicaciones" } }
-if (-not $Usuario) { $Usuario = if ($env:DB_USER) { $env:DB_USER } else { "postgres" } }
+if (-not $AdminUsuario) { $AdminUsuario = if ($env:DB_ADMIN_USER) { $env:DB_ADMIN_USER } else { "postgres" } }
 
-if (-not $env:PGPASSWORD -and $env:DB_PASSWORD) {
-    $env:PGPASSWORD = $env:DB_PASSWORD
-}
 if (-not $env:PGPASSWORD) {
-    throw "Define DB_PASSWORD en .env o PGPASSWORD en el entorno."
+    if ($env:DB_ADMIN_PASSWORD) {
+        $env:PGPASSWORD = $env:DB_ADMIN_PASSWORD
+    } else {
+        $seguro = Read-Host "Contraseña de PostgreSQL para '$AdminUsuario'" -AsSecureString
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($seguro)
+        try {
+            $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        } finally {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+        }
+    }
 }
 
 $psql = (Get-Command psql -ErrorAction SilentlyContinue).Source
@@ -43,10 +54,10 @@ if (-not $psql) { throw "No se encontró psql.exe. Instala PostgreSQL o agrégal
 
 Write-Host "Usando: $psql" -ForegroundColor DarkGray
 
-$existe = & $psql -U $Usuario -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$BaseDatos'"
+$existe = & $psql -U $AdminUsuario -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$BaseDatos'"
 if ($existe -ne "1") {
     Write-Host "Creando base de datos '$BaseDatos'..." -ForegroundColor Cyan
-    & $psql -U $Usuario -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE `"$BaseDatos`""
+    & $psql -U $AdminUsuario -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE `"$BaseDatos`""
     if ($LASTEXITCODE -ne 0) { throw "No se pudo crear la base de datos." }
 } else {
     Write-Host "La base de datos '$BaseDatos' ya existe." -ForegroundColor DarkGray
@@ -55,8 +66,9 @@ if ($existe -ne "1") {
 foreach ($archivo in @("001_schema.sql", "002_indexes.sql", "003_views.sql")) {
     $ruta = Join-Path $raiz "sql\$archivo"
     Write-Host "Aplicando $archivo..." -ForegroundColor Cyan
-    & $psql -U $Usuario -d $BaseDatos -v ON_ERROR_STOP=1 -f $ruta
+    & $psql -U $AdminUsuario -d $BaseDatos -v ON_ERROR_STOP=1 -f $ruta
     if ($LASTEXITCODE -ne 0) { throw "Error aplicando $archivo" }
 }
 
 Write-Host "Base de datos lista." -ForegroundColor Green
+Write-Host "Siguiente paso: .\scripts\crear_usuario_app.ps1" -ForegroundColor Yellow

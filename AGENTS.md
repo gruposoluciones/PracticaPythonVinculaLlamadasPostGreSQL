@@ -98,6 +98,7 @@ Dependencias en `requirements.txt`. No añadir librerías sin justificar y sin a
 ├── scripts/
 │   ├── instalar.ps1
 │   ├── inicializar_bd.ps1
+│   ├── crear_usuario_app.ps1
 │   ├── cargar.ps1
 │   ├── run.ps1
 │   └── pruebas.ps1
@@ -206,6 +207,7 @@ Cada regla nueva debe tener test en `tests/test_normalizacion.py`.
 
 # Base de datos
 .\scripts\inicializar_bd.ps1
+.\scripts\crear_usuario_app.ps1
 
 # Carga
 .\scripts\cargar.ps1 -Archivo .\data\entrada\archivo.xlsx
@@ -248,6 +250,7 @@ python -m pytest -q
 
 - API solo en `127.0.0.1` (nunca `0.0.0.0`).
 - `.env` en `.gitignore`; no hay contraseñas en el código.
+- La aplicación usa un usuario dedicado (`vincula`) con permisos mínimos; el superusuario solo se usa en los scripts de administración.
 - Cabeceras CSP, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` en `/api/`.
 - Validar extensión y tamaño de subida (`MAX_SUBIDA_MB`, por defecto 25).
 - No registrar números completos en logs.
